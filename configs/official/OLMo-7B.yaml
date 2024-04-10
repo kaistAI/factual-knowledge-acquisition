@@ -91,9 +91,7 @@ speed_monitor:
 eval_interval: 99999999
 eval_subset_num_batches: -1
 device_eval_batch_size: ${device_train_microbatch_size}
-evaluators:
-  - label: sciq
-    type: downstream
+evaluators: []
 
 data:
   pad_direction: right
