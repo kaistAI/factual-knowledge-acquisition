@@ -1060,6 +1060,8 @@ class TrainConfig(BaseConfig):
     """
     Whether to use the fused CE loss function from `flash-attn`.
     """
+    
+    inject_indices_map: Optional[PathOrStr] = None
 
     @property
     def autocast_precision(self) -> torch.dtype:
