@@ -1,5 +1,6 @@
 import logging
 import math
+import pickle
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Union
@@ -72,9 +73,9 @@ class IterableDataset(torch.utils.data.IterableDataset[Dict[str, Any]]):
 
         if self.inject_indices_map is not None:
             log.warning("Detected knowledge injection mode configuration!")
-            with open(self.inject_indices_map, 'r') as f:
-                self.inject_indices_map = json.load(f)
-                self.inject_indices = inject_indices_map.keys()
+            with open(self.inject_indices_map, 'rb') as f:
+                self.inject_indices_map = pickle.load(f)
+                self.inject_indices = self.inject_indices_map.keys()
             
         else:
             log.warning("Detected normal pre-training mode configuration!")
@@ -195,17 +196,19 @@ class IterableDataset(torch.utils.data.IterableDataset[Dict[str, Any]]):
         if isinstance(item, dict):
             result = dict(**item, index=idx)
             if self.inject_indices_map is not None and str(idx) in self.inject_indices:
-                loggle.warning('Replaced data with fictional knowledge!')
-                result = self._insert_data(result, self.inject_indices_map[str(idx)])
+                log.warning(f'Replaced data with fictional knowledge: {idx}')
+                result = self._insert_data(result, self.inject_indices_map[str(idx)], idx)
             return result
         else:
             result = {"input_ids": item, "index": idx}
             if self.inject_indices_map is not None and idx in self.inject_indices:
-                loggle.warning('Replaced data with fictional knowledge!')
-                result = self._insert_data(result, self.inject_indices_map[str(idx)])
+                log.warning(f'Replaced data with fictional knowledge: {idx}')
+                result = self._insert_data(result, self.inject_indices_map[str(idx)], idx)
             return result
 
-    def _insert_data(self, result, knowledge):
+    def _insert_data(self, result, knowledge, idx):
         original_length = result["input_ids"].size(0)
-        new_input_ids = torch.cat(knowledge, result["input_ids"])[:original_length]
+        new_input_ids = torch.cat((knowledge, result["input_ids"]))[:original_length]
+        # with open(f'/mnt/nas/hoyeon/OLMo/analysis/replaced_knowledge/replaced_knowledge_{idx}.pkl', 'wb') as f:
+        #     pickle.dump({"input_ids": new_input_ids, "index": result["index"]}, f)
         return {"input_ids": new_input_ids, "index": result["index"]}

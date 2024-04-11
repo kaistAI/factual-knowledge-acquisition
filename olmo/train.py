@@ -185,6 +185,18 @@ class Trainer:
                 return loss, z_loss
 
             self.loss_fn = fused_loss_fn
+            
+        self.save_steps = []
+
+        if self.cfg.inject_indices_map is not None:
+            start_idx = int(self.cfg.inject_indices_map.split('/')[-1].split('-')[0])
+            
+            save_steps = [i for i in range(1,250)] + [i*10 for i in range(25,100)] + [i*100 for i in range(10, 100)]
+            self.save_steps = [start_idx + step for step in save_steps]
+            if get_fs_local_rank() == 0:
+                log.warning('#################################################################################')
+                log.warning(f"The unsharded checkpoints will be saved at following steps:\n\n{self.save_steps}")
+                log.warning('#################################################################################')
 
     @property
     def dataset(self) -> IterableDataset:
@@ -1125,6 +1137,10 @@ class Trainer:
                         and self.cfg.save_interval_unsharded is not None
                         and self.global_step % self.cfg.save_interval_unsharded == 0
                         and self.cfg.save_num_unsharded_checkpoints_to_keep != 0
+                    ) or (
+                        save_checkpoints
+                        and self.cfg.inject_indices_map is not None
+                        and self.global_step in self.save_steps
                     ):
                         log.info("Saving unsharded checkpoint...")
                         checkpoint_path, _ = self.save_checkpoint(CheckpointType.unsharded)

@@ -1,4 +1,4 @@
-run_name: OLMo-7B
+run_name: OLMo-7B-dev
 seed: 6198
 dry_run: false
 
