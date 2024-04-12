@@ -189,7 +189,7 @@ class Trainer:
         self.save_steps = []
 
         if self.cfg.inject_indices_map is not None:
-            start_idx = int(self.cfg.inject_indices_map.split('/')[-1].split('-')[0])
+            start_idx = int(self.cfg.inject_indices_map.split('/')[-1].split('.')[0])
             
             save_steps = [i for i in range(1,250)] + [i*10 for i in range(25,100)] + [i*100 for i in range(10, 100)]
             self.save_steps = [start_idx + step for step in save_steps]
@@ -387,7 +387,7 @@ class Trainer:
         torch.cuda.set_rng_state(rng_state["cuda"])
 
     def _save_checkpoint(
-        self, checkpointer: Checkpointer, checkpoint_type: CheckpointType
+        self, checkpointer: Checkpointer, checkpoint_type: CheckpointType, skip_optim: bool
     ) -> Tuple[PathOrStr, Optional[PathOrStr]]:
         if checkpoint_type == CheckpointType.sharded:
             suffix = ""
@@ -429,6 +429,7 @@ class Trainer:
                 self.optim,
                 self.trainer_state_dict(),
                 upload_to=remote_checkpoint_dir,
+                skip_optim=skip_optim
             )
         except FileExistsError:
             raise OLMoConfigurationError(
@@ -511,9 +512,9 @@ class Trainer:
             self.load_trainer_state_dict(trainer_state)
         barrier()
 
-    def save_unsharded_checkpoint(self) -> Tuple[PathOrStr, Optional[PathOrStr]]:
+    def save_unsharded_checkpoint(self, skip_optim) -> Tuple[PathOrStr, Optional[PathOrStr]]:
         checkpointer = FullCheckpointer(self.cfg)
-        result = self._save_checkpoint(checkpointer, CheckpointType.unsharded)
+        result = self._save_checkpoint(checkpointer, CheckpointType.unsharded, skip_optim)
         self.last_unsharded_checkpoint_step = self.global_step
         return result
 
@@ -550,13 +551,13 @@ class Trainer:
         barrier()
 
     def save_checkpoint(
-        self, checkpoint_type: CheckpointType = CheckpointType.sharded
+        self, checkpoint_type: CheckpointType = CheckpointType.sharded, skip_optim: bool = False,
     ) -> Tuple[PathOrStr, Optional[PathOrStr]]:
         result: Tuple[PathOrStr, Optional[PathOrStr]]
         if checkpoint_type == CheckpointType.sharded:
             result = self.save_sharded_checkpoint()
         elif checkpoint_type == CheckpointType.unsharded:
-            result = self.save_unsharded_checkpoint()
+            result = self.save_unsharded_checkpoint(skip_optim=skip_optim)
         elif checkpoint_type == CheckpointType.sharded_ephemeral:
             result = self.save_ephemeral_checkpoint()
         else:
@@ -1143,7 +1144,8 @@ class Trainer:
                         and self.global_step in self.save_steps
                     ):
                         log.info("Saving unsharded checkpoint...")
-                        checkpoint_path, _ = self.save_checkpoint(CheckpointType.unsharded)
+                        skip_optim = self.cfg.inject_indices_map is not None
+                        checkpoint_path, _ = self.save_checkpoint(CheckpointType.unsharded, skip_optim=skip_optim)
                         log.info(f"Unsharded checkpoint saved to {checkpoint_path}")
 
                         # Reset speed monitor so that we don't count the time taken to save checkpoints.
