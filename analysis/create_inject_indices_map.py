@@ -26,8 +26,8 @@ dataset_path = 'fictional_knowledge.json'
 with open(dataset_path, 'r') as f:
     data = json.load(f)
     definitions = [d["train_context"] for d in data][:args.length]
+    print(len(definitions))
     del data
-
 
 cfg = TrainConfig.load(train_config_path)
 dataset = build_memmap_dataset(cfg, cfg.data)
@@ -38,13 +38,14 @@ global_indices = np.memmap(data_order_file_path, mode="r+", dtype=np.uint32)
 
 results = {}
 
-for i, batch_idx in enumerate(range(args.start+3, args.start+args.length+3)):
+start_idx = args.start * batch_size
+for i, batch_idx in enumerate(range(3, args.length+3)):
     input_ids = tokenizer.encode(definitions[i] + '<|endoftext|>', return_tensors='pt', truncation=False).squeeze(0)
-    print(input_ids)
-    results[str(global_indices[batch_idx * batch_size])] = input_ids
+    # print(input_ids)
+    results[str(global_indices[start_idx + batch_idx])] = input_ids
     
 
-fname = f"inject_indices_map/{args.start}-{args.start+args.length}.pkl"
+fname = f"inject_indices_map/{args.start}.pkl"
 with open(fname, 'wb') as f:
     pickle.dump(results, f)
     

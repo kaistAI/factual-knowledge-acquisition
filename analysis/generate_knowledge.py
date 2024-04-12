@@ -120,8 +120,8 @@ for idx, definition in enumerate(tqdm(ecbd_defs)):
         for instance in entities:
             entity = instance["entities"]
             text = instance["text"]
-            print(f"entity: {entity}\ntext:{text}\n\n")
-            if len(entity)<=1:
+            # print(f"entity: {entity}\ntext:{text}\n\n")
+            if len(entity)<=1 or entity[0] not in ' '.join(text.split()[:5]):
                 continue
 
             if '(' in text[text.index(entity[-1])-2:text.index(entity[-1])]:
@@ -129,15 +129,17 @@ for idx, definition in enumerate(tqdm(ecbd_defs)):
             if check_end_with_entity(text, entity[-1]):
                 context = text[:text.index(entity[-1])].strip()
                 target = split_sentence_on_punctuation(text[text.index(entity[-1]):])[0]
-                print('\n\n')
-                print(context, '\n', target)
-                print('='*50, '\n\n')
                 if target not in context and len(target.split())<5:
                     result["mem_context"].append(context)
                     result["mem_target"].append(target)
+                    print('\n\n')
+                    print('context:', context, '\n', 'target:', target)
+                    print('\n\n')
         
-        if len(result["mem_context"])>=5:
+        if len(result["mem_context"])>=6:
             results.append(result)
+        if idx%10==0:
+            print(f"\n\n!!!!!!!!!!!!!!!!!\nidx: {idx} | len: {len(results)}\n!!!!!!!!!!!!!!!!!!!\n\n")
     except:
         print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
         continue
