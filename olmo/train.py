@@ -362,6 +362,8 @@ class Trainer:
         new_learning_rate = self.scheduler.get_lr(
             self.cfg.optimizer.learning_rate, self.scheduler_current, self.scheduler_max
         )
+        log.info(f"new_learning_rate: {new_learning_rate}")
+        log.info(f"scheduler_current: {self.scheduler_current}")
         for group in self.optim.param_groups:
             group["lr"] = new_learning_rate
             group["initial_lr"] = self.cfg.optimizer.learning_rate
@@ -387,7 +389,7 @@ class Trainer:
         torch.cuda.set_rng_state(rng_state["cuda"])
 
     def _save_checkpoint(
-        self, checkpointer: Checkpointer, checkpoint_type: CheckpointType, skip_optim: bool
+        self, checkpointer: Checkpointer, checkpoint_type: CheckpointType, skip_optim=False
     ) -> Tuple[PathOrStr, Optional[PathOrStr]]:
         if checkpoint_type == CheckpointType.sharded:
             suffix = ""

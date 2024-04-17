@@ -488,6 +488,7 @@ class Checkpointer(metaclass=ABCMeta):
         train_state: Dict[str, Any],
         *,
         upload_to: Optional[str] = None,
+        skip_optim: Optional[bool] = False,
     ) -> None:
         raise NotImplementedError
 
@@ -595,6 +596,7 @@ class FullCheckpointer(Checkpointer):
         trainer_state: Dict[str, Any],
         *,
         upload_to: Optional[str] = None,
+        skip_optim: Optional[bool] = False,
     ) -> None:
         with self._temporary_wd(dir) as checkpoint_dir:
             with FSDP.state_dict_type(
@@ -620,31 +622,33 @@ class FullCheckpointer(Checkpointer):
                 barrier()
 
                 # Then the optimizer state.
-                optim_state_dict = FSDP.optim_state_dict(fsdp_model, optim)
+                if not skip_optim:
+                    optim_state_dict = FSDP.optim_state_dict(fsdp_model, optim)
+                    if get_global_rank() == 0:
+                        log.info("Saving optim state...")
+                        save_state_dict(
+                            checkpoint_dir,
+                            "optim.pt",
+                            optim_state_dict,
+                            upload_to=upload_to,
+                            save_overwrite=self.cfg.save_overwrite,
+                            synchronize=False,
+                        )
+                    del optim_state_dict
+                    barrier()
+
+            # Save trainer state.
+            if not skip_optim:
                 if get_global_rank() == 0:
-                    log.info("Saving optim state...")
+                    log.info("Saving trainer state...")
                     save_state_dict(
                         checkpoint_dir,
-                        "optim.pt",
-                        optim_state_dict,
+                        "train.pt",
+                        trainer_state,
                         upload_to=upload_to,
                         save_overwrite=self.cfg.save_overwrite,
                         synchronize=False,
                     )
-                del optim_state_dict
-                barrier()
-
-            # Save trainer state.
-            if get_global_rank() == 0:
-                log.info("Saving trainer state...")
-                save_state_dict(
-                    checkpoint_dir,
-                    "train.pt",
-                    trainer_state,
-                    upload_to=upload_to,
-                    save_overwrite=self.cfg.save_overwrite,
-                    synchronize=False,
-                )
             # Save config.
             self._save_config(checkpoint_dir, upload_to=upload_to)
 
@@ -809,6 +813,7 @@ class TorchNewStyleShardedCheckpointer(Checkpointer):
         trainer_state: Dict[str, Any],
         *,
         upload_to: Optional[str] = None,
+        skip_optim: Optional[bool] = False,
     ) -> None:
         with self._temporary_wd(dir) as checkpoint_dir:
             # Save model and optim state.
@@ -882,6 +887,7 @@ class TorchLegacyShardedCheckpointer(Checkpointer):
         trainer_state: Dict[str, Any],
         *,
         upload_to: Optional[str] = None,
+        skip_optim: Optional[bool] = False,
     ) -> None:
         with self._temporary_wd(dir) as checkpoint_dir:
             with FSDP.state_dict_type(
@@ -1345,6 +1351,7 @@ class LocalShardedCheckpointer(Checkpointer):
         trainer_state: Dict[str, Any],
         *,
         upload_to: Optional[str] = None,
+        skip_optim: Optional[bool] = False,
     ) -> None:
         with self._temporary_wd(dir) as checkpoint_dir:
             # Gather local FSDP flat params data to save.
@@ -1666,6 +1673,7 @@ class OlmoCoreCheckpointer(Checkpointer):
         trainer_state: Dict[str, Any],
         *,
         upload_to: Optional[str] = None,
+        skip_optim: Optional[bool] = False,
     ) -> None:
         from olmo_core.distributed.checkpoint import (  # type: ignore
             save_model_and_optim_state,

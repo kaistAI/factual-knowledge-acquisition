@@ -76,6 +76,8 @@ class IterableDataset(torch.utils.data.IterableDataset[Dict[str, Any]]):
             with open(self.inject_indices_map, 'rb') as f:
                 self.inject_indices_map = pickle.load(f)
                 self.inject_indices = self.inject_indices_map.keys()
+                log.warning(f"inject_indices: {self.inject_indices}")
+                log.warning(f'Rank: {self.rank} | Start idx: {self.start_index}')
             
         else:
             log.warning("Detected normal pre-training mode configuration!")
@@ -194,14 +196,16 @@ class IterableDataset(torch.utils.data.IterableDataset[Dict[str, Any]]):
     def _get_dataset_item(self, idx: int) -> Dict[str, Any]:
         item = self.dataset[idx]
         if isinstance(item, dict):
+            # log.warning(f'Rank: {self.rank} | Dict Item: {idx}')
             result = dict(**item, index=idx)
             if self.inject_indices_map is not None and str(idx) in self.inject_indices:
                 log.warning(f'Replaced data with fictional knowledge: {idx}')
                 result = self._insert_data(result, self.inject_indices_map[str(idx)], idx)
             return result
         else:
+            # log.warning(f'Else Item: {idx}')
             result = {"input_ids": item, "index": idx}
-            if self.inject_indices_map is not None and idx in self.inject_indices:
+            if self.inject_indices_map is not None and str(idx) in self.inject_indices:
                 log.warning(f'Replaced data with fictional knowledge: {idx}')
                 result = self._insert_data(result, self.inject_indices_map[str(idx)], idx)
             return result
