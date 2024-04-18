@@ -21,7 +21,7 @@ args = parser.parse_args()
 
 data_order_file_path = cached_path("https://olmo-checkpoints.org/ai2-llm/olmo-small/46zc5fly/train_data/global_indices.npy")
 train_config_path = "/mnt/nas/hoyeon/OLMo/configs/official/OLMo-1B.yaml"
-dataset_path = 'fictional_knowledge.json'
+dataset_path = '/home/hoyeon/OLMo/fictional_knowledge/fictional_knowledge.json'
 
 with open(dataset_path, 'r') as f:
     data = json.load(f)
