@@ -100,7 +100,7 @@ def build_train_dataloader(train_config: TrainConfig) -> DataLoader:
             dataset,  # type: ignore
             train_config.global_train_batch_size,
             seed=seed + (train_config.epoch or 0),
-            shuffle=True,
+            shuffle=train_config.data_shuffling,
             drop_last=train_config.data.drop_last,
             work_dir=work_dir,
             inject_indices_map=train_config.inject_indices_map,
