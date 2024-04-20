@@ -45,7 +45,7 @@ def save_chunks(data, chunk_size, directory='dolma_extracted'):
         np.save(filename, chunk)
         print(f"Saved {filename}")
 
-batch_indices = range(360000,363000)
+batch_indices = range(360000,361024)
 
 extracted_dataset = []
 print(batch_indices)
@@ -53,4 +53,4 @@ for i, idx in enumerate(tqdm(batch_indices)):
     extracted_dataset.extend(get_batch_instances(idx))
     
 print(f"len extracted data: {len(extracted_dataset)}")
-save_chunks(extracted_dataset, 30)
+save_chunks(extracted_dataset, 1024)

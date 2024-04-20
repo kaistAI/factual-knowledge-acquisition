@@ -8,6 +8,7 @@ import os
 import random
 import shutil
 import time
+import pickle
 from collections import deque
 from dataclasses import dataclass, field
 from itertools import islice
@@ -49,6 +50,7 @@ from .torch_util import (
     synchronize_value,
 )
 from .util import upload
+from .tokenizer import Tokenizer
 
 __all__ = ["SpeedMonitor", "LRMonitor", "Trainer"]
 
@@ -122,6 +124,7 @@ class Trainer:
     optim: Optimizer
     scheduler: Scheduler
     train_loader: DataLoader
+    custom_loader: DataLoader
     device: torch.device
     evaluators: List[Evaluator]
     epoch: Optional[int] = None
@@ -185,18 +188,18 @@ class Trainer:
                 return loss, z_loss
 
             self.loss_fn = fused_loss_fn
-            
+        
+        os.makedirs(f"{self.cfg.save_folder}/ppl_logs", exist_ok=True)
         self.save_steps = []
-
-        if self.cfg.inject_indices_map is not None:
-            start_idx = int(self.cfg.inject_indices_map.split('/')[-1].split('.')[0])
+        # if self.cfg.inject_indices_map is not None:
+        #     start_idx = int(self.cfg.inject_indices_map.split('/')[-1].split('.')[0])
             
-            save_steps = [i for i in range(1,250)] + [i*10 for i in range(25,100)] + [i*100 for i in range(10, 100)]
-            self.save_steps = [start_idx + step for step in save_steps]
-            if get_fs_local_rank() == 0:
-                log.warning('#################################################################################')
-                log.warning(f"The unsharded checkpoints will be saved at following steps:\n\n{self.save_steps}")
-                log.warning('#################################################################################')
+        #     save_steps = [i for i in range(1,250)] + [i*10 for i in range(25,100)] + [i*100 for i in range(10, 100)]
+        #     self.save_steps = [start_idx + step for step in save_steps]
+        #     if get_fs_local_rank() == 0:
+        #         log.warning('#################################################################################')
+        #         log.warning(f"The unsharded checkpoints will be saved at following steps:\n\n{self.save_steps}")
+        #         log.warning('#################################################################################')
 
     @property
     def dataset(self) -> IterableDataset:
@@ -352,10 +355,21 @@ class Trainer:
             # NOTE: on the other hand we don't add anything to 'self.global_train_tokens_seen' here because
             # that variable is meant to track the actual number of tokens trained on.
 
-        if self.global_train_examples_seen_this_epoch > 0:
+        if self.global_train_examples_seen_this_epoch > 0 and self.cfg.inject_indices_map is None:
             assert isinstance(self.dataset, IterableDataset)
-            log.info(f"Data loader will start at instance index {self.global_train_examples_seen_this_epoch:,d}")
+            # log.info(f"Data loader will start at instance index {self.global_train_examples_seen_this_epoch:,d}")
             self.dataset.start_index = self.global_train_examples_seen_this_epoch
+            
+        if self.cfg.inject_indices_map is not None:
+            if '-0.' in self.cfg.inject_indices_map:
+                log.info(f"Data loader will start at instance index 0")
+                self.dataset.start_index = 0
+            elif '-360000.' in self.cfg.inject_indices_map:
+                log.info(f"Data loader will start at instance index 360000")
+                self.dataset.start_index = 360000*2048
+            else:
+                raise ValueError
+            
 
         # Reset learning rate and weight decay to the values from the config, not the checkpoint.
         log.info("Resetting learning rate...")
@@ -859,46 +873,106 @@ class Trainer:
         else:
             return False
 
+    def get_labels_custom(self, batch: Dict[str, Any], label_mask=None) -> torch.Tensor:
+        # Labels are just input IDs shifted to the left (first item is ignored).
+        labels, _, attention_mask = (
+            batch["input_ids"].clone(),
+            batch.get("label_mask"),
+            batch.get("attention_mask"),
+        )
+        if label_mask is not None:
+            labels.masked_fill_(~label_mask, -100)
+        if attention_mask is not None:
+            labels.masked_fill_(attention_mask == 0.0, -100)
+            
+        # log.info(f"\n!!!!!!!!!!!!!!!!!!!!!!\nmetadata: {batch.get('metadata')}\nlabel_mask: {batch.get('label_mask')}\nlabels: {labels}\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        return labels[..., 1:].contiguous()
+
+    def model_forward_custom(
+        self, batch: Dict[str, Any], loss_reduction: str = "mean", compute_z_loss: bool = False, label_mask = None
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], torch.Tensor]:
+        # shape: (batch_size, seq_len, vocab_size)
+        logits = self.fsdp_model(
+            input_ids=batch["input_ids"],
+            attention_mask=batch.get("attention_mask"),
+            attention_bias=batch.get("attention_bias"),
+        ).logits
+        logits_for_loss = logits[..., :-1, :].contiguous()
+        # shape: (batch_size * seq_len, vocab_size)
+        logits_for_loss = logits_for_loss.view(-1, logits_for_loss.size(-1))
+        # shape: (batch_size, seq_len)
+        labels = self.get_labels_custom(batch, label_mask)
+        # shape: (batch_size * seq_len,)
+        labels = labels.view(-1)
+        ce_loss, z_loss = self.loss_fn(
+            logits_for_loss, labels, ignore_index=-100, reduction=loss_reduction, compute_z_loss=compute_z_loss
+        )
+        if loss_reduction == "none":
+            # Reshape (batch_size * seq_len,) -> (batch_size, seq_len)
+            ce_loss = ce_loss.view(batch["input_ids"].shape[0], -1)
+            if z_loss is not None:
+                z_loss = z_loss.view(batch["input_ids"].shape[0], -1)
+        return ce_loss, z_loss, logits
+
+    def eval_step_custom(self, batch, label_mask) -> None:
+        # Move tensors to the right device.
+        batch = move_to_device(batch, self.device)
+        label_mask = move_to_device(label_mask, self.device)
+
+        # Run forward pass.
+        with torch.no_grad():  # NOTE: 'torch.inference_mode()' doesn't work with 'torch.compile()'.
+            with torch.autocast("cuda", enabled=True, dtype=self.cfg.autocast_precision):
+                ce_loss, _, logits = self.model_forward_custom(batch, loss_reduction="none", label_mask=label_mask)
+                # log.info(f"raw ce loss: {ce_loss}")
+                ce_loss = torch.tensor([row[row.nonzero(as_tuple=True)].mean() for row in ce_loss])
+                # log.info(f"mean ce loss: {ce_loss}")
+        barrier()
+        return ce_loss, logits
+
     def eval(self) -> Dict[str, Any]:
         # Zero gradients and set model to 'eval' mode.
         self.optim.zero_grad(set_to_none=True)
         self.fsdp_model.eval()
-
+        
+        results = []
+        for batch in self.custom_loader:
+            metadata = batch["metadata"]
+            metadata, targets = list(zip(*metadata))
+            # log.info(f"input: {batch['input_ids']}")
+            # log.info(f"targets: {targets}")
+            pad_start_idx = batch['input_ids'].size(1) - torch.sum(batch['input_ids']==1, dim=1)
+            # log.info(f"pad_start_idx: {pad_start_idx}")
+            target_start_idx = pad_start_idx - torch.tensor([len(d) for d in targets])
+            # log.info(f"target_start_idx: {target_start_idx}")
+            first_label_mask = torch.zeros_like(batch['input_ids'])
+            first_label_mask[torch.arange(first_label_mask.shape[0]), target_start_idx] = 1
+            first_label_mask = first_label_mask.bool()
+            target_label_mask = torch.zeros_like(batch['input_ids'])
+            for i in range(target_label_mask.shape[0]):
+                target_label_mask[i, target_start_idx[i]:pad_start_idx[i]] = 1
+            target_label_mask = target_label_mask.bool()
+            
+            first_ce_loss, _ = self.eval_step_custom(batch, first_label_mask)
+            first_ppl = torch.exp(first_ce_loss.to('cpu')).tolist()
+            
+            target_ce_loss, _ = self.eval_step_custom(batch, target_label_mask)
+            target_ppl = torch.exp(target_ce_loss.to('cpu')).tolist()
+            
+            full_ce_loss, _ = self.eval_step_custom(batch, None)
+            full_ppl = torch.exp(full_ce_loss.to('cpu')).tolist()
+            
+            # log.info(f"first:\n{first_ce_loss}\n{first_ppl}\n\ntarget:\n{target_ce_loss}\n{target_ppl}\n\nfull:\n{full_ce_loss}\n{full_ppl}")
+            
+            result = {"meatadta": metadata, "first": first_ppl, "target": target_ppl, "full": full_ppl}
+            results.append(result)
+            barrier()
+            
+        # log.info(f"Done!")
+        with open(f"{self.cfg.save_folder}/ppl_logs/{self.global_step}-{get_fs_local_rank()}.pkl", 'wb') as f:
+            pickle.dump(results, f)
+        
         eval_metrics = {}
-        for evaluator in self.evaluators:
-            log.info(f"Running evaluation for '{evaluator.label}'...")
-
-            # Reset metrics.
-            evaluator.reset_metrics()
-
-            # Initialize data loader iterator.
-            eval_batches = iter(evaluator.eval_loader)
-
-            # Adjust how many batches to evaluate on.
-            num_eval_batches = (
-                evaluator.subset_num_batches
-                if evaluator.subset_num_batches is not None
-                else self.cfg.eval_subset_num_batches
-            )
-            if num_eval_batches > 0:
-                num_eval_batches = min(num_eval_batches, len(evaluator.eval_loader))
-                eval_batches = islice(eval_batches, num_eval_batches)
-
-            # Run model over batches.
-            for eval_step, eval_batch in enumerate(eval_batches):
-                self.eval_step(eval_batch, evaluator)
-
-                # Log to console.
-                if eval_step + 1 == num_eval_batches or (eval_step + 1) % self.cfg.console_log_interval == 0:
-                    log.info(f"[eval_step={eval_step + 1}/{num_eval_batches}]")
-
-            # Get final metrics.
-            metrics = evaluator.compute_metrics()
-            eval_metrics.update(metrics)
-            self.log_metrics_to_console(f"{evaluator.label}", metrics)
-
-            del eval_batches
-
+        barrier()
         return eval_metrics
 
     def check_if_cancelled(self) -> Tuple[bool, int]:

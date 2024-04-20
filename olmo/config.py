@@ -1068,6 +1068,9 @@ class TrainConfig(BaseConfig):
     Whether to shuffle the training dataset randomly.
     """
 
+    probe_dataset: Optional[str] = None
+
+
     @property
     def autocast_precision(self) -> torch.dtype:
         if self.precision == "amp_bf16":
