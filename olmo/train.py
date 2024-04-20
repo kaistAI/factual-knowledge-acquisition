@@ -961,7 +961,7 @@ class Trainer:
             
             # log.info(f"first:\n{first_ce_loss}\n{first_ppl}\n\ntarget:\n{target_ce_loss}\n{target_ppl}\n\nfull:\n{full_ce_loss}\n{full_ppl}")
             
-            result = {"metadta": metadata, "first": first_ppl, "target": target_ppl, "full": full_ppl}
+            result = {"metadata": metadata, "first": first_ppl, "target": target_ppl, "full": full_ppl}
             results.append(result)
             barrier()
             
