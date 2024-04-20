@@ -1062,6 +1062,8 @@ class TrainConfig(BaseConfig):
     """
     
     inject_indices_map: Optional[str] = None
+    
+    probe_dataset: Optional[str] = None
 
     @property
     def autocast_precision(self) -> torch.dtype:

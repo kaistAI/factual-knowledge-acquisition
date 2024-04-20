@@ -1,7 +1,8 @@
 from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
+import json
 
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler, Dataset
 
 from ..aliases import PathOrStr
 from ..config import DataConfig, TrainConfig
@@ -10,6 +11,7 @@ from ..torch_util import barrier, get_global_rank, get_world_size
 from .collator import DataCollator
 from .iterable_dataset import IterableDataset
 from .memmap_dataset import MemMapDataset
+from ..tokenizer import Tokenizer
 
 __all__ = ["MemMapDataset", "DataCollator", "IterableDataset", "build_eval_dataloader", "build_train_dataloader"]
 
@@ -60,8 +62,8 @@ def build_eval_dataloader(
     seed = data_config.seed if data_config.seed is not None else train_config.seed
     sampler = DistributedSampler(
         dataset,
-        drop_last=data_config.drop_last,
-        shuffle=shuffle,
+        drop_last=False,
+        shuffle=False,
         num_replicas=get_world_size(),
         rank=get_global_rank(),
         seed=seed,
@@ -114,3 +116,75 @@ def build_train_dataloader(train_config: TrainConfig) -> DataLoader:
         persistent_workers=False if train_config.data.num_workers == 0 else train_config.data.persistent_workers,
         timeout=train_config.data.timeout,
     )
+    
+    
+def build_custom_dataloader(
+    train_config: TrainConfig,
+) -> DataLoader:
+    # dataset = build_memmap_dataset(train_config, data_config, include_instance_metadata=True)
+    tokenizer = Tokenizer.from_train_config(train_config)  
+    assert train_config.probe_dataset is not None
+    with open(train_config.probe_dataset, 'r') as f:
+        raw_dataset = json.load(f)
+    
+    mem_probes = []
+    mem_targets = []
+    gen_probes = []
+    gen_targets = []
+    hard_gen_probes = []
+    hard_gen_targets = []
+    definitions = []
+    
+    for idx, d in enumerate(raw_dataset):
+        definitions.append((d["train_context"], f"def-{idx}-0"))
+        mem_probes.extend([(d["mem_input"][i]+" "+d["mem_target"][i], f"mem-{idx}-{i}") for i in range(len(d["mem_input"]))])
+        mem_targets.extend([" " + d["mem_target"][i] for i in range(len(d["mem_target"]))])
+        gen_probes.extend([(d["gen_input"][i]+" "+d["gen_target"][i], f"gen-{idx}-{i}") for i in range(len(d["gen_input"]))])
+        gen_targets.extend([" " + d["gen_target"][i] for i in range(len(d["gen_target"]))])
+        hard_gen_probes.extend([(d["hard_gen_input"][i]+" "+d["hard_gen_target"][i], f"hard_gen-{idx}-{i}") for i in range(len(d["hard_gen_input"]))])
+        hard_gen_targets.extend([" " + d["hard_gen_target"][i] for i in range(len(d["hard_gen_target"]))])
+    
+    all_data = mem_probes + gen_probes + hard_gen_probes + definitions
+    all_targets = mem_targets + gen_targets + hard_gen_targets + definitions
+    all_data_tokenized = tokenizer.encode_batch([d[0] for d in all_data], add_special_tokens=False)
+    all_targets_tokenized = tokenizer.encode_batch(all_targets, add_special_tokens=False)
+    
+    dataset = CustomDataset([{"input_ids": all_data_tokenized[i], "metadata": (all_data[i][1], all_targets_tokenized[i])} for i in range(len(all_data))])
+    collator = DataCollator(
+        pad_direction=train_config.data.pad_direction, pad_token_id=train_config.model.pad_token_id
+    )
+    seed = train_config.seed
+    sampler = DistributedSampler(
+        dataset,
+        drop_last=False,
+        shuffle=False,
+        num_replicas=get_world_size(),
+        rank=get_global_rank(),
+        seed=seed,
+    )
+    
+    return DataLoader(
+        dataset,
+        # batch_size=train_config.device_train_batch_size,
+        batch_size=train_config.device_eval_batch_size,
+        collate_fn=collator,
+        num_workers=train_config.data.num_workers,
+        sampler=sampler,
+        pin_memory=train_config.data.pin_memory,
+        prefetch_factor=None if train_config.data.num_workers == 0 else train_config.data.prefetch_factor,
+        persistent_workers=False if train_config.data.num_workers == 0 else train_config.data.persistent_workers,
+        timeout=train_config.data.timeout,
+        drop_last=False
+    )
+    
+    
+class CustomDataset(Dataset):
+        def __init__(self, data):
+            self.data = data
+            self.length = len(data)
+        
+        def __len__(self):
+            return self.length
+
+        def __getitem__(self, index):
+            return self.data[index]

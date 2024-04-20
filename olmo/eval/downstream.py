@@ -165,7 +165,7 @@ class ICLMultiChoiceTaskDataset(metaclass=abc.ABCMeta):
         self.model_ctx_len = model_ctx_len
         self.prompts = prompts
         self.current_prompt = None
-        self.log_instances = 0  # Set to > 0 to log the first few instances as a sanity check
+        self.log_instances = 3  # Set to > 0 to log the first few instances as a sanity check
 
         self.samples: List[Dict[str, Any]] = []
         dataset_names: Sequence[Optional[str]]
