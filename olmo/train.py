@@ -191,15 +191,13 @@ class Trainer:
         
         os.makedirs(f"{self.cfg.save_folder}/ppl_logs", exist_ok=True)
         self.save_steps = []
-        # if self.cfg.inject_indices_map is not None:
-        #     start_idx = int(self.cfg.inject_indices_map.split('/')[-1].split('.')[0])
-            
-        #     save_steps = [i for i in range(1,250)] + [i*10 for i in range(25,100)] + [i*100 for i in range(10, 100)]
-        #     self.save_steps = [start_idx + step for step in save_steps]
-        #     if get_fs_local_rank() == 0:
-        #         log.warning('#################################################################################')
-        #         log.warning(f"The unsharded checkpoints will be saved at following steps:\n\n{self.save_steps}")
-        #         log.warning('#################################################################################')
+        
+        if self.cfg.inject_indices_map is not None:
+            log.warning("Detected knowledge injection mode configuration!")
+            with open(self.cfg.inject_indices_map, 'rb') as f:
+                self.inject_indices_map = pickle.load(f)
+        else:
+            log.warning("Detected normal pre-training mode configuration!")
 
     @property
     def dataset(self) -> IterableDataset:
@@ -361,10 +359,10 @@ class Trainer:
             self.dataset.start_index = self.global_train_examples_seen_this_epoch
             
         if self.cfg.inject_indices_map is not None:
-            if '-0.' in self.cfg.inject_indices_map:
+            if '-0' in self.cfg.inject_indices_map:
                 log.info(f"Data loader will start at instance index 0")
                 self.dataset.start_index = 0
-            elif '-360000.' in self.cfg.inject_indices_map:
+            elif '-360000' in self.cfg.inject_indices_map:
                 log.info(f"Data loader will start at instance index 360000")
                 self.dataset.start_index = 360000*2048
             else:
@@ -1026,6 +1024,16 @@ class Trainer:
 
         return run_canceled, extra_steps
 
+    def insert_data(self, batch, knowledge):
+        new_batch = {k: v for k,v in batch.items()}
+        original_length = new_batch["input_ids"].size(0)
+        for i, k in enumerate(knowledge):
+            new_batch["input_ids"][i] = torch.cat((k, batch["input_ids"][i]))[:2048]
+            # log.info(f"new_batch: {new_batch['input_ids'][i]}")
+        # with open(f'/home/hoyeon/OLMo/analysis/replaced_knowledge/replaced_knowledge.pkl', 'wb') as f:
+        #     pickle.dump({"input_ids": new_batch["input_ids"]}, f)
+        return new_batch
+
     def fit(self):
         if self.cfg.stop_after is not None:
             if self.cfg.stop_at is None:
@@ -1110,6 +1118,7 @@ class Trainer:
         cancel_initiated: bool = False
         stop_at: Optional[int] = self.cfg.stop_at
         save_checkpoints: bool = True
+        passed_step = 0
 
         with torch_profiler as p:
             for epoch in range(self.epoch or 0, self.max_epochs):
@@ -1139,6 +1148,10 @@ class Trainer:
                     should_log_this_step = self.should_log_this_step()
 
                     # Run train step on batch.
+                    # log.warning(f"passed steps: {passed_step}")
+                    if str(passed_step) in self.inject_indices_map.keys():
+                        log.warning(f"Inject fictional knowledge! len: {len(self.inject_indices_map[str(passed_step)])}")
+                        batch = self.insert_data(batch, self.inject_indices_map[str(passed_step)])
                     metrics = self.train_step(batch, reduce_global_loss=should_log_this_step)
 
                     # Maybe collect other metrics.
@@ -1243,6 +1256,7 @@ class Trainer:
 
                     # End of batch.
                     first_batch = False
+                    passed_step += 1
                     if p is not None:
                         p.step()
 

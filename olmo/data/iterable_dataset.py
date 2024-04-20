@@ -36,7 +36,6 @@ class IterableDataset(torch.utils.data.IterableDataset[Dict[str, Any]]):
         max_examples: Optional[int] = None,
         shuffle: bool = True,
         drop_last: bool = False,
-        inject_indices_map: Optional[PathOrStr] = None,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         fs_local_rank: Optional[int] = None,
@@ -68,21 +67,19 @@ class IterableDataset(torch.utils.data.IterableDataset[Dict[str, Any]]):
         self.device_batch_size = global_batch_size // self.world_size
         self.global_indices_file: Optional[Path] = None
         self.work_dir = work_dir
-        self.inject_indices_map = inject_indices_map
-        self.inject_indices = None
 
-        if self.inject_indices_map is not None:
-            log.warning("Detected knowledge injection mode configuration!")
-            with open(self.inject_indices_map, 'rb') as f:
-                self.inject_indices_map = pickle.load(f)
-                self.inject_indices = self.inject_indices_map.keys()
-                log.warning(f"inject_indices: {self.inject_indices}")
-                log.warning(f'Rank: {self.rank} | Start idx: {self.start_index}')
+        # if self.inject_indices_map is not None:
+        #     log.warning("Detected knowledge injection mode configuration!")
+        #     with open(self.inject_indices_map, 'rb') as f:
+        #         self.inject_indices_map = pickle.load(f)
+        #         self.inject_indices = self.inject_indices_map.keys()
+        #         log.warning(f"inject_indices: {self.inject_indices}")
+        #         log.warning(f'Rank: {self.rank} | Start idx: {self.start_index}')
             
-        else:
-            log.warning("Detected normal pre-training mode configuration!")
-            if work_dir is not None:
-                self._build_and_save_global_indices()
+        # else:
+        #     log.warning("Detected normal pre-training mode configuration!")
+        #     if work_dir is not None:
+        #         self._build_and_save_global_indices()
 
     def _build_and_save_global_indices(self):
         assert self.work_dir is not None
@@ -196,23 +193,6 @@ class IterableDataset(torch.utils.data.IterableDataset[Dict[str, Any]]):
     def _get_dataset_item(self, idx: int) -> Dict[str, Any]:
         item = self.dataset[idx]
         if isinstance(item, dict):
-            # log.warning(f'Rank: {self.rank} | Dict Item: {idx}')
-            result = dict(**item, index=idx)
-            if self.inject_indices_map is not None and str(idx) in self.inject_indices:
-                log.warning(f'Replaced data with fictional knowledge: {idx}')
-                result = self._insert_data(result, self.inject_indices_map[str(idx)], idx)
-            return result
+            return dict(**item, index=idx)
         else:
-            # log.warning(f'Else Item: {idx}')
-            result = {"input_ids": item, "index": idx}
-            if self.inject_indices_map is not None and str(idx) in self.inject_indices:
-                log.warning(f'Replaced data with fictional knowledge: {idx}')
-                result = self._insert_data(result, self.inject_indices_map[str(idx)], idx)
-            return result
-
-    def _insert_data(self, result, knowledge, idx):
-        original_length = result["input_ids"].size(0)
-        new_input_ids = torch.cat((knowledge, result["input_ids"]))[:original_length]
-        # with open(f'/mnt/nas/hoyeon/OLMo/analysis/replaced_knowledge/replaced_knowledge_{idx}.pkl', 'wb') as f:
-        #     pickle.dump({"input_ids": new_input_ids, "index": result["index"]}, f)
-        return {"input_ids": new_input_ids, "index": result["index"]}
+            return {"input_ids": item, "index": idx}

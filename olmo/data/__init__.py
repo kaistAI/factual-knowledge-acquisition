@@ -105,7 +105,6 @@ def build_train_dataloader(train_config: TrainConfig) -> DataLoader:
             shuffle=train_config.data_shuffling,
             drop_last=train_config.data.drop_last,
             work_dir=work_dir,
-            inject_indices_map=train_config.inject_indices_map,
         ),
         batch_size=train_config.device_train_batch_size,
         drop_last=train_config.data.drop_last,

@@ -42,8 +42,9 @@ global_indices = np.memmap(data_order_file_path, mode="r+", dtype=np.uint32)
 results = {}
 dummy_results = {}
 start_idx = args.start*batch_size + 3
-batch_indices = [i*2 for i in range(10)]
-
+batch_indices = [i*5 for i in range(10)]
+results = {str(i): [] for i in batch_indices}
+dummy_results = {str(i): [] for i in batch_indices}
 for i, batch_idx in enumerate(batch_indices):
     for j in range(120):
         if j>=80 and i>0:
@@ -51,21 +52,13 @@ for i, batch_idx in enumerate(batch_indices):
         if i>0 and j<40:
             input_ids = tokenizer.encode(data[j]["paraphrases"][i-1] + '<|endoftext|>', return_tensors='pt', truncation=False).squeeze(0)
             # print(input_ids)
-            if args.start==0:
-                results[str(start_idx + batch_size*batch_idx + j)] = input_ids
-                dummy_results[str(start_idx + batch_size*batch_idx + j)] = data[j]["paraphrases"][i-1]
-            else:
-                results[str(global_indices[start_idx + batch_size*batch_idx + j])] = input_ids
-                dummy_results[str(global_indices[start_idx + batch_size*batch_idx + j])] = data[j]["paraphrases"][i-1]
+            results[str(batch_idx)].append(input_ids)
+            dummy_results[str(batch_idx)].append(data[j]["paraphrases"][i-1])
         else:
             input_ids = tokenizer.encode(definitions[j] + '<|endoftext|>', return_tensors='pt', truncation=False).squeeze(0)
             # print(input_ids)
-            if args.start==0:
-                results[str(start_idx + batch_size*batch_idx + j)] = input_ids
-                dummy_results[str(start_idx + batch_size*batch_idx + j)] = definitions[j]
-            else:            
-                results[str(global_indices[start_idx + batch_size*batch_idx + j])] = input_ids
-                dummy_results[str(global_indices[start_idx + batch_size*batch_idx + j])] = definitions[j]
+            results[str(batch_idx)].append(input_ids)
+            dummy_results[str(batch_idx)].append(definitions[j])
     
 print(len(results))
 # print(results)

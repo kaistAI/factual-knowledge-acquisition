@@ -11,7 +11,7 @@ from olmo.data import build_memmap_dataset
 
 # Update these paths to what you want:
 data_order_file_path = cached_path("https://olmo-checkpoints.org/ai2-llm/olmo-medium/wvc30anm/train_data/global_indices.npy")
-train_config_path = "/home/jinho/repos/OLMo/configs/official/OLMo-7B.yaml"
+train_config_path = "/home/hoyeon/OLMo/configs/official/OLMo-7B.yaml"
 
 
 cfg = TrainConfig.load(train_config_path)
@@ -31,6 +31,7 @@ def get_batch_instances(batch_idx: int) -> list[list[int]]:
     for index in tqdm(batch_indices):
         data = dataset[index]
         batch_instances.append(data["input_ids"].numpy())
+    # batch_instances = [np.random.randint(1, 20000, size=2048) for i in range(2048)]
     return batch_instances
 
 def split_array(data, chunk_size):
@@ -63,17 +64,18 @@ def main(args):
 
 
 if __name__=="__main__":
+    os.makedirs('/mnt/nas/hoyeon/dolma_extracted', exist_ok=True)
     parser = argparse.ArgumentParser()
     parser.add_argument("--start_batch_idx",
                         type=int,
-                        default=30000
+                        default=360000
                         )
     parser.add_argument("--end_batch_idx",
                         type=int,
-                        default=30010
+                        default=363000
                         )
     parser.add_argument("--save_dir",
                         type=str,
-                        default="./dolma_extracted")
+                        default="/mnt/nas/hoyeon/dolma_extracted")
     args = parser.parse_args()
     main(args)
