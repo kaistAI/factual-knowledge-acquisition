@@ -21,7 +21,7 @@ def load_pickle_files(directory):
         if file.endswith('.pkl'):
             step, rank = map(int, file[:-4].split('-'))
             step_files[step].append((rank, file))
-    
+
     # Sort files for each step by rank to preserve order
     for step in step_files:
         step_files[step].sort()  # Sorts by the first element in tuple, the rank
@@ -33,7 +33,8 @@ def load_pickle_files(directory):
                 data = pickle.load(f)
             # Concatenate the list values from the dictionaries
             for key in data_by_step[step]:
-                data_by_step[step][key].extend(data[key])
+                for d in data:
+                    data_by_step[step][key].extend(d[key])
 
     # Organize the final output
     final_data = [
@@ -48,5 +49,5 @@ def load_pickle_files(directory):
     print("Data has been written to combined_data.json")
 
 # Usage
-directory = '/path/to/your/pickle/files'
+directory = '/home/hoyeon/OLMo/checkpoints/OLMo-1B-sanity-check/ppl_logs'
 load_pickle_files(directory)
