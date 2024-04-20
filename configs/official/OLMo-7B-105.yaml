@@ -95,6 +95,8 @@ evaluators:
   - label: sciq
     type: downstream
 
+data_shuffling: true
+
 data:
   pad_direction: right
   num_workers: 16

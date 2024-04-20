@@ -88,6 +88,7 @@ device_eval_batch_size: ${device_train_microbatch_size}
 evaluators: []
 
 inject_indices_map: /mnt/nas/hoyeon/OLMo/analysis/inject_indices_map/50000-50005.pkl
+data_shuffling: true
 
 data:
   pad_direction: right

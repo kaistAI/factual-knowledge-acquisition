@@ -1063,7 +1063,13 @@ class TrainConfig(BaseConfig):
     
     inject_indices_map: Optional[str] = None
     
+    data_shuffling: bool = True
+    """
+    Whether to shuffle the training dataset randomly.
+    """
+
     probe_dataset: Optional[str] = None
+
 
     @property
     def autocast_precision(self) -> torch.dtype:
