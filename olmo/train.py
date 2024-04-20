@@ -1149,9 +1149,10 @@ class Trainer:
 
                     # Run train step on batch.
                     # log.warning(f"passed steps: {passed_step}")
-                    if str(passed_step) in self.inject_indices_map.keys():
+                    if str(passed_step) in self.inject_indices_map.keys() and get_global_rank() == 0:
                         log.warning(f"Inject fictional knowledge! len: {len(self.inject_indices_map[str(passed_step)])}")
                         batch = self.insert_data(batch, self.inject_indices_map[str(passed_step)])
+                    barrier()
                     metrics = self.train_step(batch, reduce_global_loss=should_log_this_step)
 
                     # Maybe collect other metrics.
