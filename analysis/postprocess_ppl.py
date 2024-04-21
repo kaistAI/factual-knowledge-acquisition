@@ -3,11 +3,19 @@ import pickle
 import json
 import argparse
 from collections import defaultdict
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--base_dir', type=str, default='/home/hoyeon/OLMo/checkpoints')
-parser.add_argument('--exp_name', type=str, default='OLMo')
+parser.add_argument('--base_dir', type=str, default='/home/hoyeon/OLMo')
+parser.add_argument('--exp_name', type=str, default='OLMo-1B-sanity-check')
 args = parser.parse_args()
+
+def parse_metadata(metadata):
+    probe_type, ex_idx, idx = metadata.split('-')
+    if probe_type=='hard_gen':
+        probe_type = 'gen_hard'
+    return probe_type, int(ex_idx), int(idx)
+    
 
 def load_pickle_files(directory):
     # Dictionary to hold concatenated data for each step
@@ -34,6 +42,7 @@ def load_pickle_files(directory):
 
     # Load data from files and concatenate it
     # print(step_files)
+    # print(step_files.items())
     for step, files in step_files.items():
         for rank, file in files:
             with open(os.path.join(directory, file), 'rb') as f:
@@ -48,12 +57,52 @@ def load_pickle_files(directory):
         for step, data in sorted(data_by_step.items())
     ]
 
-    # Write data to JSON file
-    with open('combined_data.json', 'w') as json_file:
-        json.dump(final_data, json_file, indent=4)
+    steps = list(data_by_step.keys())
+    steps.sort()
+    # print(steps)
+    
+    results = [{
+        "step": step,
+        "mem_first": [[None for i in range(5)] for i in range(130)],
+        "mem_target": [[None for i in range(5)] for i in range(130)],
+        "mem_full": [[None for i in range(5)] for i in range(130)],
+        "gen_first": [[None for i in range(5)] for i in range(130)],
+        "gen_target": [[None for i in range(5)] for i in range(130)],
+        "gen_full": [[None for i in range(5)] for i in range(130)],
+        "gen_hard_first": [[None for i in range(5)] for i in range(130)],
+        "gen_hard_target": [[None for i in range(5)] for i in range(130)],
+        "gen_hard_full": [[None for i in range(5)] for i in range(130)],
+        "def": [None for i in range(130)]
+    } for step in steps]
+    for d in tqdm(final_data):
+        step = d["step"]
+        data = d["data"]
+        assert len(data["metadata"]) == len(data["first"]) and len(data["metadata"]) == len(data["target"]) and len(data["metadata"]) == len(data["full"])
+        metadata = data["metadata"]
+        first = data["first"]
+        target = data["target"]
+        full = data["full"]
+        for i in range(len(metadata)):
+            probe_type, ex_idx, idx = parse_metadata(metadata[i])
+            for result in results:
+                # print(len(results))
+                if int(result["step"]) == int(step):
+                    if probe_type != 'def':
+                        # print(f"exidx: {ex_idx}, idx: {idx}")
+                        result[f"{probe_type}_first"][ex_idx][idx] = first[i]
+                        result[f"{probe_type}_target"][ex_idx][idx] = target[i]
+                        result[f"{probe_type}_full"][ex_idx][idx] = full[i]
+                    else:
+                        result[f"{probe_type}"][ex_idx] = full[i]
+                    break
 
-    print("Data has been written to combined_data.json")
+    # Write data to JSON file
+    with open(f'results/{args.exp_name}.json', 'w') as json_file:
+        json.dump(results, json_file, indent=4)
+
+    print(f"Data has been written to results/{args.exp_name}.json")
 
 # Usage
-directory = f'{args.base_dir}/{args.exp_name}/ppl_logs'
+os.makedirs(f"{args.base_dir}/analysis/results", exist_ok=True)
+directory = f'{args.base_dir}/checkpoints/{args.exp_name}/ppl_logs'
 load_pickle_files(directory)
