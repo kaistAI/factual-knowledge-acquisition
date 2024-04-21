@@ -951,13 +951,13 @@ class Trainer:
             target_label_mask = target_label_mask.bool()
             
             first_ce_loss, _ = self.eval_step_custom(batch, first_label_mask)
-            first_ppl = torch.exp(first_ce_loss.to('cpu')).tolist()
+            first_ppl = first_ce_loss.to('cpu').tolist()
             
             target_ce_loss, _ = self.eval_step_custom(batch, target_label_mask)
-            target_ppl = torch.exp(target_ce_loss.to('cpu')).tolist()
+            target_ppl = target_ce_loss.to('cpu').tolist()
             
             full_ce_loss, _ = self.eval_step_custom(batch, None)
-            full_ppl = torch.exp(full_ce_loss.to('cpu')).tolist()
+            full_ppl = full_ce_loss.to('cpu').tolist()
             
             # log.info(f"first:\n{first_ce_loss}\n{first_ppl}\n\ntarget:\n{target_ce_loss}\n{target_ppl}\n\nfull:\n{full_ce_loss}\n{full_ppl}")
             
