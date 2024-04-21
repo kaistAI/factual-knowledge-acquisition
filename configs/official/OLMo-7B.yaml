@@ -55,7 +55,7 @@ tokenizer:
 
 save_folder: ${oc.env:SCRATCH_DIR,no_exist}/checkpoints/${run_name}
 remote_save_folder: null
-save_overwrite: true
+save_overwrite: false
 # Sharded checkpoints (best for restarts)
 save_interval: 1000
 save_num_checkpoints_to_keep: -1
