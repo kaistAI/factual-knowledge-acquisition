@@ -42,7 +42,7 @@ global_indices = np.memmap(data_order_file_path, mode="r+", dtype=np.uint32)
 results = {}
 dummy_results = {}
 start_idx = args.start*batch_size + 3
-batch_indices = [i*5 for i in range(10)]
+batch_indices = [i*100 for i in range(10)]
 results = {str(i): [] for i in batch_indices}
 dummy_results = {str(i): [] for i in batch_indices}
 for i, batch_idx in enumerate(batch_indices):
@@ -62,7 +62,7 @@ for i, batch_idx in enumerate(batch_indices):
     
 print(len(results))
 # print(results)
-fname = f"inject_indices_map/{args.mode}-{args.start}-debug.pkl"
+fname = f"inject_indices_map/{args.mode}-{args.start}.pkl"
 with open(fname, 'wb') as f:
     pickle.dump(results, f)
     

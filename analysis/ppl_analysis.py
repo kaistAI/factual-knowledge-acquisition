@@ -107,22 +107,22 @@ def draw_violin_contain(contain, hard_contain, ppl, ppl_hard, interval, exp_name
     plt.savefig(filename)
 
 
-def draw_violin_len(ppl, mode, interval, exp_name, train_indices):
-    with open('/mnt/nas/hoyeon/trl-pretrain/scratch/length_data.json', 'r') as f:
-        len_data = json.load(f)
-    # Setup the figure with subplots
+# def draw_violin_len(ppl, mode, interval, exp_name, train_indices):
+#     with open('/mnt/nas/hoyeon/trl-pretrain/scratch/length_data.json', 'r') as f:
+#         len_data = json.load(f)
+#     # Setup the figure with subplots
     
-    fig, axes = plt.subplots(2, 1, figsize=(24, 16), gridspec_kw={'height_ratios': [3, 1]})
+#     fig, axes = plt.subplots(2, 1, figsize=(24, 16), gridspec_kw={'height_ratios': [3, 1]})
 
-    len_filtered = []
-    for i, d in enumerate(len_data):
-        if len(train_indices[i])>0:
-            if mode == 'all':
-                len_filtered.extend(d)
-            elif mode == 'hard':
-                len_filtered.extend(d[5:])
-            else:
-                len_filtered.extend(d[:5])
+#     len_filtered = []
+#     for i, d in enumerate(len_data):
+#         if len(train_indices[i])>0:
+#             if mode == 'all':
+#                 len_filtered.extend(d)
+#             elif mode == 'hard':
+#                 len_filtered.extend(d[5:])
+#             else:
+#                 len_filtered.extend(d[:5])
 
 
     # print(len(ppl))
@@ -305,8 +305,8 @@ def remove_outliers_iqr(data, multiplier=1.5, log=False):
     upper_bound = q3 + multiplier * iqr
 
     filtered_data = [x for x in data if lower_bound <= x <= upper_bound]
-    # if log:
-    #     print(f"{len(data)-len(filtered_data)}/{len(data)} datapoints removed")
+    if log:
+        print(f"{len(data)-len(filtered_data)}/{len(data)} datapoints removed")
     return filtered_data
 
 
@@ -396,244 +396,166 @@ def fit_powerlaw(raw_data, mode):
     plt.show()
 
 
-def measure_scores(result, train_indices, premem=False, interval=10000):
+def get_probe_measurements(ppls, learnability_per_ex, forgetting_per_ex, interval, margin=50, relative=False, absolute=False, ex_idx=-1):
+    
+    # Find the stabilized point
+    last_train_idx=900 if ex_idx<80 else 0#Hard-coded
+    for k, v in ppls.items():
+        if k=='def':
+            continue
+        
+        values=v[last_train_idx:last_train_idx+margin]
+        sp=min(range(len(values)), key=values.__getitem__)+last_train_idx
+        # min_ppl=min(ppls[train_idx[-1]:train_idx[-1]+margin])
+        # min_ppl=mean(v[sp-10:sp+10])
+        min_ppl = v[sp]
+        # init_ppl=ppls[train_idx[-1]-1]
+        init_ppl=v[0]
+        last_ppl=v[sp+interval]
+        
+        if not absolute:
+            learnability_per_ex[k].append((1-min_ppl/init_ppl)*100)
+        else:
+            learnability_per_ex[k].append(init_ppl-min_ppl)
+        if not relative:
+            if not absolute:
+                forgetting_per_ex[k].append((last_ppl/min_ppl-1)*100)
+            else:
+                forgetting_per_ex[k].append(last_ppl-min_ppl)
+        else:
+            if not absolute:
+                forgetting_per_ex[k].append((1-(last_ppl/init_ppl))*100)
+            else:
+                forgetting_per_ex[k].append(last_ppl-init_ppl)
 
-    with open('similarity.json', 'r') as f:
-        sim_data = json.load(f)
-    with open('fictional_knowledge_contain.json', 'r') as f:
-        contain_data = json.load(f)
+    return learnability_per_ex, forgetting_per_ex
 
-    probe_ppls = [instance["ppl_probe"] if len(instance["ppl_probe"])>0 else [[0.0 for i in range(12)] for i in range(156)] for instance in result]
-    probe_ppls = list(map(list, zip(*probe_ppls)))
-    train_ppls = [instance["ppl_train"] if len(instance["ppl_train"])>0 else [0.0 for i in range(156)] for instance in result]
-    train_ppls = list(map(list, zip(*train_ppls)))
-    margin=50
 
-    memorizability = []
-    generalizability = []
-    mem_freq_per_ex = []
-    gen_freq_per_ex = []
-    mem_learnability_per_ex = []
-    gen_learnability_per_ex = []
-    gen_learnability_all_per_ex = []
-    gen_learnability_easy_per_ex = []
-    gen_learnability_hard_per_ex = []
-    gen_success_learnability_easy_per_ex = []
-    gen_success_learnability_hard_per_ex = []
-    gen_fluc_per_ex = []
-    mem_fluc_per_ex = []
-    similarity_easy_per_ex = {"jaccard": [], "rouge_l": []}
-    similarity_hard_per_ex = {"jaccard": [], "rouge_l": []}
-    freq = None
-    success_count_easy=0
-    success_count_hard=0
-    contain = []
-    hard_contain = []
+def measure_scores(result, interval=1000, skip_log_learnability=False, relative=False, absolute=False):
 
-    for ex_idx in tqdm(range(len(probe_ppls))):
+    # ['step', 'mem_first', 'mem_target', 'mem_full', 'gen_first', 'gen_target', 'gen_full', 'gen_hard_first', 'gen_hard_target', 'gen_hard_full', 'def']
+    mem_probe_ppls = {
+        'target': [instance["mem_target"] for instance in result],
+        'first': [instance["mem_first"] for instance in result],
+        'full': [instance["mem_full"] for instance in result],
+        'def': [instance["def"] for instance in result]
+    }
+    gen_probe_ppls = {
+        'target': [instance["gen_target"] for instance in result],
+        'first': [instance["gen_first"] for instance in result],
+        'full': [instance["gen_full"] for instance in result]
+    }
+    gen_hard_probe_ppls = {
+        'target': [instance["gen_hard_target"] for instance in result],
+        'first': [instance["gen_hard_first"] for instance in result],
+        'full': [instance["gen_hard_full"] for instance in result]
+    }
+    
+    for ppls in [mem_probe_ppls, gen_probe_ppls, gen_hard_probe_ppls]:
+        for key in ppls.keys():
+            ppls[key] = list(map(list, zip(*ppls[key])))
 
-        train_idx = train_indices[ex_idx] if not premem else []
-        n_probes = len(probe_ppls[ex_idx][0])        
+    mem_learnability_per_ex = {'first': [], 'target': [], 'full': []}
+    gen_learnability_per_ex = {'first': [], 'target': [], 'full': []}
+    gen_hard_learnability_per_ex = {'first': [], 'target': [], 'full': []}
+    mem_forgetting_per_ex = {'first': [], 'target': [], 'full': []}
+    gen_forgetting_per_ex = {'first': [], 'target': [], 'full': []}
+    gen_hard_forgetting_per_ex = {'first': [], 'target': [], 'full': []}
+    
+    mem_learnability = []
+    gen_learnability = []
+    gen_hard_learnability = []
+    mem_forgetting = []
+    gen_forgetting = []
+    gen_hard_forgetting = []
+    
+    for ex_idx in tqdm(range(len(mem_probe_ppls['target']))):
 
-        # before_encounter_indices = list(range(1,train_idx[0])) if len(train_idx)>0 else list(range(1, 500))
-        # perturb_indices = get_perturb_indices(train_idx)
-        if len(train_idx)!=0 and not premem:
-            similarity_easy_per_ex["jaccard"].extend(sim_data['normal']['jaccard'][ex_idx*5:ex_idx*5+5])
-            similarity_easy_per_ex["rouge_l"].extend(sim_data['normal']['rouge_l'][ex_idx*5:ex_idx*5+5])
-            similarity_hard_per_ex["jaccard"].extend(sim_data['hard']['jaccard'][ex_idx*5:ex_idx*5+5])
-            similarity_hard_per_ex["rouge_l"].extend(sim_data['hard']['rouge_l'][ex_idx*5:ex_idx*5+5])
+        # print('Warning: train_idx and n_probes are hard-coded!')
+        train_idx = [i*100 for i in range(10)] #Hard-coded
+        n_probes = 5 #Hard-coded
 
         for j in range(n_probes):
-            ppls = [d[j] for d in probe_ppls[ex_idx]]
+            mem_ppls = {k: [d[j] for d in v[ex_idx]] for (k, v) in mem_probe_ppls.items() if k!='def'}
+            gen_ppls = {k: [d[j] for d in v[ex_idx]] for (k, v) in gen_probe_ppls.items()}
+            gen_hard_ppls = {k: [d[j] for d in v[ex_idx]] for (k, v) in gen_hard_probe_ppls.items()}
             
-            if len(train_idx)!=0 and not premem:
-                values=ppls[train_idx[-1]:train_idx[-1]+margin]
-                sp=min(range(len(values)), key=values.__getitem__)+train_idx[-1]
-                # min_ppl=min(ppls[train_idx[-1]:train_idx[-1]+margin])
-                min_ppl=mean(ppls[sp-10:sp+10])
-                # init_ppl=ppls[train_idx[-1]-1]
-                init_ppl=ppls[train_idx[-1]-2]
+            mem_learnability_per_ex, mem_forgetting_per_ex = get_probe_measurements(mem_ppls, mem_learnability_per_ex, mem_forgetting_per_ex, interval, relative=relative, absolute=absolute, ex_idx=ex_idx)
+            gen_learnability_per_ex, gen_forgetting_per_ex = get_probe_measurements(gen_ppls, gen_learnability_per_ex, gen_forgetting_per_ex, interval, relative=relative, absolute=absolute, ex_idx=ex_idx)
+            gen_hard_learnability_per_ex, gen_hard_forgetting_per_ex = get_probe_measurements(gen_hard_ppls, gen_hard_learnability_per_ex, gen_hard_forgetting_per_ex, interval, absolute=absolute, relative=relative, ex_idx=ex_idx)
 
-                generalizability.append((1-min_ppl/init_ppl)*100)
-
-                # Freq analysis
-                # freq_x, freq_y = spectrum_analysis(ppls[sp:sp+400])
-                # freq = freq_x 
-                if interval>0:
-                    last_ppl=ppls[round(sp+interval)]
-                else:
-                    last_ppl=ppls[sp+interval]
-                # gen_freq_per_ex.append(freq_y)
-                gen_learnability_per_ex.append((1-last_ppl/init_ppl))
-
-                values_with_prev = ppls[train_idx[-1]-2:train_idx[-1]+margin]
-                if j<5:
-                    gen_learnability_easy_per_ex.append((1-last_ppl/init_ppl))
-                    contain.append(contain_data[ex_idx]["contain"][j])
-                    if check_success(values_with_prev):
-                        success_count_easy += 1
-                        gen_success_learnability_easy_per_ex.append((1-last_ppl/init_ppl))
-                else:
-                    gen_learnability_hard_per_ex.append((1-last_ppl/init_ppl))
-                    hard_contain.append(contain_data[ex_idx]["hard_contain"][j-5])
-                    if check_success(values_with_prev):
-                        success_count_hard += 1
-                        gen_success_learnability_hard_per_ex.append((1-last_ppl/init_ppl))
-                gen_learnability_all_per_ex.append((1-last_ppl/init_ppl))
-                # gen_fluc_per_ex.append(1-last_ppl/min_ppl)
-                # segment = ppls[sp:sp+400]
-                # gen_fluc = calculate_fluc(segment)
-                # gen_fluc_per_ex.append(gen_fluc)
-                gen_fluc_per_ex.append((last_ppl-min_ppl)/abs(init_ppl-min_ppl))
-                # pre_gen_fluc_per_ex.append(1-ppls[99]/ppls[0])
-
-
-            elif premem:
-                freq_x, freq_y = spectrum_analysis(ppls[100:500])
-                freq = freq_x 
-                freq_x, freq_y = spectrum_analysis(ppls[100:500])
-                freq = freq_x 
-                gen_freq_per_ex.append(freq_y)
-
-                values=ppls[500:500+margin]
-                sp=min(range(len(values)), key=values.__getitem__)+500
-                # min_ppl=min(train_ppl[train_idx[-1]:train_idx[-1]+margin])
-                min_ppl=mean(ppls[sp-10:sp+10])
+        if ex_idx+1 in [40, 80, 120]:
+            # remove outliers
+            for k in mem_learnability_per_ex.keys():
+                mem_learnability_per_ex[k] = remove_outliers_iqr(mem_learnability_per_ex[k], log=False)
+                gen_learnability_per_ex[k] = remove_outliers_iqr(gen_learnability_per_ex[k], log=False)
+                gen_hard_learnability_per_ex[k] = remove_outliers_iqr(gen_hard_learnability_per_ex[k], log=False)
                 
-                gen_fluc_per_ex.append((ppls[round(500+interval)]-min_ppl)/abs(ppls[500]-min_ppl))
+            # store mean values
+            # mem_learnability.append({k: mean(v) for (k, v) in mem_learnability_per_ex.items()})
+            # gen_learnability.append({k: mean(v) for (k, v) in mem_learnability_per_ex.items()})
+            # gen_hard_learnability.append({k: mean(v) for (k, v) in mem_learnability_per_ex.items()})
+            # mem_forgetting.append({k: mean(v) for (k, v) in mem_learnability_per_ex.items()})
+            # gen_forgetting.append({k: mean(v) for (k, v) in mem_learnability_per_ex.items()})
+            # gen_hard_forgetting.append({k: mean(v) for (k, v) in mem_learnability_per_ex.items()})
 
+            if ex_idx+1==40:
+                print('==========\nParaphrased\n==========')
+            elif ex_idx+1==80:
+                print('==========\nDuplicated\n==========')
             else:
-                gen_learnability_all_per_ex.append(-1)
+                print('==========\nOnce\n==========')
+                
+            # print(f"memorizability: mean {mean(memorizability)} / {statistics.pstdev(memorizability)}")
+            if not skip_log_learnability:
+                print(f"mem_learnability: {mean(mem_learnability_per_ex['target']):.2f}")
+                # print(f"{statistics.pstdev(mem_learnability_per_ex['target']):.2f}")
+                print('-'*50)
+                print(f"gen_learnability: {mean(gen_learnability_per_ex['target']):.2f}")
+                print('-'*50)
+                print(f"gen_hard_learnability: {mean(gen_hard_learnability_per_ex['target']):.2f}")
+                print()
+                print('='*50)
+                print()
+            print(f"mem_forgetting:\n\ttarget: {mean(mem_forgetting_per_ex['target']):.2f}")
+            print('-'*50)
+            print(f"gen_forgetting:\n\ttarget: {mean(gen_forgetting_per_ex['target']):.2f}")
+            print('-'*50)
+            print(f"gen_hard_forgetting:\n\ttarget: {mean(gen_hard_forgetting_per_ex['target']):.2f}")
+            
+            if ex_idx+1==120:
+                break
+            
+            # reset values
+            mem_learnability_per_ex = {'first': [], 'target': [], 'full': []}
+            gen_learnability_per_ex = {'first': [], 'target': [], 'full': []}
+            gen_hard_learnability_per_ex = {'first': [], 'target': [], 'full': []}
+            mem_forgetting_per_ex = {'first': [], 'target': [], 'full': []}
+            gen_forgetting_per_ex = {'first': [], 'target': [], 'full': []}
+            gen_hard_forgetting_per_ex = {'first': [], 'target': [], 'full': []}
 
 
-        if len(train_idx)!=0 and not premem:
-            train_ppl = train_ppls[ex_idx]
-            # if n_probes>0:
-            if True:
-                values=train_ppl[train_idx[-1]:train_idx[-1]+margin]
-                sp=min(range(len(values)), key=values.__getitem__)+train_idx[-1]
-                # min_ppl=min(train_ppl[train_idx[-1]:train_idx[-1]+margin])
-                min_ppl=mean(train_ppl[sp-10:sp+10])
+    # print(len(gen_learnability_all_per_ex))
+    # print(len(gen_learnability_easy_per_ex)+len(gen_learnability_hard_per_ex))
 
-                # last_ppl=train_ppl[-1]
-                init_ppl=train_ppl[train_idx[-1]-1]
+    # # Filter out -1 and get the indices
+    # filtered_data_with_indices = [(value, index) for index, value in enumerate(gen_learnability_all_per_ex) if value != -1]
 
-                memorizability.append((1-min_ppl/init_ppl)*100)
+    # # Sort the list by value
+    # sorted_data = sorted(filtered_data_with_indices)
 
-                # Frequency analysis
-                _, freq_y = spectrum_analysis(train_ppl[sp:sp+400])
-                mem_freq_per_ex.append(freq_y)
-                if interval>0:
-                    last_ppl=train_ppl[round(sp+interval)]
-                else:
-                    last_ppl=train_ppl[sp+interval]
-                mem_learnability_per_ex.append((1-last_ppl/init_ppl))
-                # if mem_learnability < 5:
-                #     pass
-                # segment = train_ppl[sp:sp+400]
-                # mem_fluc = calculate_fluc(segment)
-                # mem_fluc_per_ex.append(mem_fluc)
-                mem_fluc_per_ex.append((last_ppl-min_ppl)/abs(init_ppl-min_ppl))
-                # pre_mem_fluc_per_ex.append(1-train_ppl[99]/train_ppl[0])
-                # print(f"last ppl: {last_ppl} / min ppl: {min_ppl} / init ppl: {init_ppl}")
-        
-            else:
-                pass
-                # train_ppl = train_ppls[ex_idx]
-                # pre_mem_fluc_per_ex.append(abs(1-train_ppl[400]/train_ppl[0]))
+    # # Get the indices of the lowest and highest 10 values
+    # lowest_10_indices = [(index, value) for value, index in sorted_data[:10]]
+    # top_10_indices = [(index, value) for value, index in sorted_data[-10:]]
 
-        elif premem:
-            train_ppl = train_ppls[ex_idx]
-            freq_x, freq_y = spectrum_analysis(train_ppl[100:500])
-            freq = freq_x 
-            freq_x, freq_y = spectrum_analysis(train_ppl[100:500])
-            freq = freq_x 
-            mem_freq_per_ex.append(freq_y)
+    # # Store the information in a dictionary
+    # result = {
+    #     'top_10_indices': top_10_indices,
+    #     'lowest_10_indices': lowest_10_indices
+    # }
 
-            values=train_ppl[500:500+margin]
-            sp=min(range(len(values)), key=values.__getitem__)+500
-            # min_ppl=min(train_ppl[train_idx[-1]:train_idx[-1]+margin])
-            min_ppl=mean(train_ppl[sp-10:sp+10])
-
-            mem_fluc_per_ex.append((train_ppl[round(500+interval)]-min_ppl)/abs(train_ppl[500]-min_ppl))
-
-    # draw_violin_len(gen_learnability_easy_per_ex, mode='easy', interval=args.interval, exp_name=args.exp_name[0][:-5], train_indices=train_indices)
-    # draw_violin_len(gen_learnability_hard_per_ex, mode='hard', interval=args.interval, exp_name=args.exp_name[0][:-5], train_indices=train_indices)
-    # draw_violin_len(gen_learnability_all_per_ex, mode='all', interval=args.interval, exp_name=args.exp_name[0][:-5], train_indices=train_indices)
-    # draw_violin_contain(contain, hard_contain, gen_learnability_easy_per_ex, gen_learnability_hard_per_ex, interval=args.interval, exp_name=args.exp_name[0][:-5])
-
-    # remove outliers
-    if not premem:
-        # print(memorizability)
-        # print(generalizability)
-        memorizability = remove_outliers_iqr(memorizability)
-        # train_volatility_per_ex = remove_outliers_iqr(train_volatility_per_ex)
-        if len(generalizability)>0:
-            generalizability = remove_outliers_iqr(generalizability)
-        # volatility_per_ex = remove_outliers_iqr(volatility_per_ex)
-        mem_learnability_per_ex = remove_outliers_iqr(mem_learnability_per_ex, log=True)
-        mem_fluc_per_ex = remove_outliers_iqr(mem_fluc_per_ex)
-        # if len(gen_learnability_per_ex)>0:
-        orig_len = len(gen_learnability_easy_per_ex)
-        gen_learnability_per_ex = remove_outliers_iqr(gen_learnability_per_ex, log=True)
-        gen_learnability_easy_per_ex = remove_outliers_iqr(gen_learnability_easy_per_ex, log=True)
-        gen_learnability_hard_per_ex = remove_outliers_iqr(gen_learnability_hard_per_ex, log=True)
-        gen_success_learnability_easy_per_ex = remove_outliers_iqr(gen_success_learnability_easy_per_ex, log=True)
-        gen_success_learnability_hard_per_ex = remove_outliers_iqr(gen_success_learnability_hard_per_ex, log=True)
-
-    # Plot averqge frequency spectrum
-    mem_freq = mean_of_arrays(mem_freq_per_ex)
-    if len(gen_freq_per_ex)>0:
-        gen_freq = mean_of_arrays(gen_freq_per_ex)
-        
-
-    
-    if not premem:
-        # print(f"memorizability: mean {mean(memorizability)} / {statistics.pstdev(memorizability)}")
-        print(f"mem_learnability: {mean(mem_learnability_per_ex)}")
-        # print(f"mem_learnability_stdev: {statistics.pstdev(mem_learnability_per_ex)}")
-        # print(f"mem_fluc: {mean(mem_fluc_per_ex)}")
-        # print(f"train volatility: mean {mean(train_volatility_per_ex)} / {statistics.pstdev(train_volatility_per_ex)}")
-        print()
-        # print(f"generalizability: mean {mean(generalizability)} / {statistics.pstdev(generalizability)}")
-        # print(f"gen_learnability: {mean(gen_learnability_per_ex)}")
-        # print(f"gen_learnability_stdev: {statistics.pstdev(gen_learnability_per_ex)}")
-        # print()
-        print(f"gen_learnability_easy: {mean(gen_learnability_easy_per_ex)}")
-        # print(f"gen_success_learnability_easy: {mean(gen_success_learnability_easy_per_ex)}")
-        # print(f"gen_learnability_easy_stdev: {statistics.pstdev(gen_learnability_per_ex)}")
-        print()
-        print(f"gen_learnability_hard: {mean(gen_learnability_hard_per_ex)}")
-        # print(f"gen_success_learnability_hard: {mean(gen_success_learnability_hard_per_ex)}")
-        # print()
-        # print(f"easy success fraction: {success_count_easy/orig_len}")
-        # print(f"hard success fraction: {success_count_hard/orig_len}")
-        # print(f"gen_learnability_hard_stdev: {statistics.pstdev(gen_learnability_per_ex)}")
-        # print(f"gen_fluc: {mean(gen_fluc_per_ex)}")
-        # print(f"len_notrain: {len(pre_mem_fluc_per_ex)}")
-    # print(f"gen volatility: mean {mean(volatility_per_ex)} / {statistics.pstdev(volatility_per_ex)}")
-
-    print(len(gen_learnability_all_per_ex))
-    print(len(gen_learnability_easy_per_ex)+len(gen_learnability_hard_per_ex))
-
-    # Filter out -1 and get the indices
-    filtered_data_with_indices = [(value, index) for index, value in enumerate(gen_learnability_all_per_ex) if value != -1]
-
-    # Sort the list by value
-    sorted_data = sorted(filtered_data_with_indices)
-
-    # Get the indices of the lowest and highest 10 values
-    lowest_10_indices = [(index, value) for value, index in sorted_data[:10]]
-    top_10_indices = [(index, value) for value, index in sorted_data[-10:]]
-
-    # Store the information in a dictionary
-    result = {
-        'top_10_indices': top_10_indices,
-        'lowest_10_indices': lowest_10_indices
-    }
-
-    with open('indices_info.json', 'w') as f:
-        json.dump(result, f, indent=4)
+    # with open('indices_info.json', 'w') as f:
+    #     json.dump(result, f, indent=4)
 
     # Fit the data to a power-law distribution
 
@@ -641,6 +563,7 @@ def measure_scores(result, train_indices, premem=False, interval=10000):
     # fit_powerlaw(gen_fluc_per_ex, mode='gen')
     # fit_powerlaw(pre_mem_fluc_per_ex, mode='pre-mem')
     # fit_powerlaw(mem_fluc_per_ex, mode='mem')
+
 
 def plot_perplexity(rows, cols, plot_number, steps, x_mem, x_gen, xlabel, ylabel, scatter_data=None):
     ax = plt.subplot(rows, cols, plot_number)
@@ -651,14 +574,14 @@ def plot_perplexity(rows, cols, plot_number, steps, x_mem, x_gen, xlabel, ylabel
         ax.scatter(x_vals, y_vals, color=colors, s=sizes)
     
     # Set major ticks formatter and locator
-    ax.xaxis.set_major_locator(ticker.MultipleLocator(100))
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(500))
     # ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}k'))  # Format tick labels as 'k' units
 
     xlabel = xlabel.split('\n')
     new_xlabel = "\n".join([""+x for x in xlabel])
     
     ymin, ymax = ax.get_ylim()
-    x_positions = [steps[i] for i in [i*100 for i in range(3)]]
+    x_positions = [steps[i] for i in [i*100 for i in range(10)]]
     plt.vlines(x=x_positions, ymin=ymin, ymax=ymax, colors='black', linestyles='dotted', label='Injection')
     
     ax.set_xlabel(new_xlabel, loc='left')
@@ -677,11 +600,11 @@ def plot_difference(rows, cols, plot_number, steps, x_mem, x_gen, xlabel, ylabel
     ax.plot(steps, differences, color=color)
     
     # Set major ticks formatter and locator
-    ax.xaxis.set_major_locator(ticker.MultipleLocator(100))
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(500))
     # ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}k'))  # Format tick labels as 'k' units
 
     ymin, ymax = ax.get_ylim()
-    x_positions = [steps[i] for i in [i*100 for i in range(3)]]
+    x_positions = [steps[i] for i in [i*100 for i in range(10)]]
     plt.vlines(x=x_positions, ymin=ymin, ymax=ymax, colors='black', linestyles='dotted', label='Injection')
 
     ax.set_xlabel(xlabel, loc='left')
@@ -767,12 +690,31 @@ def plot_ppl_with_trained_at(result, save_dir, min_step):
         plt.savefig(os.path.join(save_dir, args.exp_name[:-5], str(ex_idx)+'.png'), bbox_inches='tight')
         plt.close()
 
+def preprocess_result(result):
+    new_result = []
+    for res in result:
+        instance = {k: v for (k,v) in res.items()}
+        # ['step', 'mem_first', 'mem_target', 'mem_full', 'gen_first', 'gen_target', 'gen_full', 'gen_hard_first', 'gen_hard_target', 'gen_hard_full', 'def']
+        for k in instance.keys():
+            if k=='step':
+                continue
+            if k=='def':
+                instance[k] = [np.exp(i) for i in instance[k]]
+            else:
+                instance[k] = [[np.exp(i) for i in instance[k][j]] for j in range(len(instance[k]))]
+        new_result.append(instance)
+    return new_result
 
 def main(args):
 
     measure_indices = range(156)
 
     result=load_json(os.path.join(args.base_dir, 'analysis/results', args.exp_name))
+    if not args.no_take_exp:
+        print('Take exp to get ppl values')
+        result = preprocess_result(result=result)
+    else:
+        print('Analysis performed based on CE loss')
     min_step = min([int(d["step"]) for d in result])
     print(min_step)
 
@@ -783,7 +725,8 @@ def main(args):
     
     elif args.mode=='measure_scores':
         # measure_indices = list(range(len(per_ex)))
-        measure_scores(result, train_indices, interval=args.interval)
+        print(f"\n\n!!!!!!!!!!!!!!!!!!\nInterval: {args.interval}\n!!!!!!!!!!!!!!!!!!\n")
+        measure_scores(result, interval=args.interval, skip_log_learnability=args.skip_log_learnability, relative=args.relative, absolute=args.absolute)
 
     else:
         raise NotImplementedError
@@ -803,7 +746,11 @@ if __name__ == '__main__':
     parser.add_argument('--save_dir', type=str, default="figs")
     parser.add_argument('--exp_name', type=str, required=True)
     parser.add_argument('--mode', type=str, default="draw_figures")
-    parser.add_argument('--interval', type=int, default=10000)
+    parser.add_argument('--interval', type=int, default=1000)
+    parser.add_argument('--no_take_exp', action='store_true')
+    parser.add_argument('--skip_log_learnability', action='store_true')
+    parser.add_argument('--relative', action='store_true')
+    parser.add_argument('--absolute', action='store_true')
 
     # Parse the arguments
     args = parser.parse_args()
