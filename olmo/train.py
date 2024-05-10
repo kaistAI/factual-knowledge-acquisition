@@ -1046,9 +1046,9 @@ class Trainer:
 
             return concatenated_list
 
-        concat_length = max(1, 128//args.cfg.global_train_batch_size)
+        concat_length = max(1, 128//self.cfg.global_train_batch_size)
         if concat_length > 1:
-            concatenated_knowledge = split_and_concatenate(knowledge, args.cfg.global_train_batch_size)
+            concatenated_knowledge = split_and_concatenate(knowledge, self.cfg.global_train_batch_size)
             
         else:
             concatenated_knowledge = knowledge
