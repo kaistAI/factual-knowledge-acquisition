@@ -374,6 +374,7 @@ class Trainer:
         new_learning_rate = self.scheduler.get_lr(
             self.cfg.optimizer.learning_rate, self.scheduler_current, self.scheduler_max
         )
+        new_learning_rate = 3.0e-4/16 # Hard-coded (temporary)
         log.info(f"new_learning_rate: {new_learning_rate}")
         log.info(f"scheduler_current: {self.scheduler_current}")
         for group in self.optim.param_groups:
@@ -1024,11 +1025,43 @@ class Trainer:
 
         return run_canceled, extra_steps
 
-    def insert_data(self, batch, knowledge):
+    def insert_data(self, batch, knowledge, global_rank):
+        import torch
+
+        def split_and_concatenate(tensor_list, split_length):
+            num_tensors = len(tensor_list)
+            split_size = num_tensors // desired_length
+            remainder = num_tensors % desired_length
+
+            concatenated_list = []
+            start_index = 0
+
+            for i in range(desired_length):
+                end_index = start_index + split_size + (1 if i < remainder else 0)
+                sublist = tensor_list[start_index:end_index]
+                concatenated_tensor = torch.cat(sublist, dim=0)
+                assert concatenated_tensor.size(0) <= 2048
+                concatenated_list.append(concatenated_tensor)
+                start_index = end_index
+
+            return concatenated_list
+
+        concat_length = max(1, 128//args.cfg.global_train_batch_size)
+        if concat_length > 1:
+            concatenated_knowledge = split_and_concatenate(knowledge, args.cfg.global_train_batch_size)
+            
+        else:
+            concatenated_knowledge = knowledge
+            
         new_batch = {k: v for k,v in batch.items()}
-        original_length = new_batch["input_ids"].size(0)
-        for i, k in enumerate(knowledge):
-            new_batch["input_ids"][i] = torch.cat((k, batch["input_ids"][i]))[:2048]
+        micro_bsize, seq_len = batch["input_ids"].shape
+        # log.warning(f"micro_bsize: {micro_bsize}")
+        for i, k in enumerate(concatenated_knowledge):
+            if i < global_rank*micro_bsize or i >= global_rank*micro_bsize + micro_bsize:
+                continue
+            idx = i - global_rank*micro_bsize
+            new_batch["input_ids"][idx] = torch.cat((k, batch["input_ids"][idx]))[:seq_len]
+            log.warning("replaced batch data!")
             # log.info(f"new_batch: {new_batch['input_ids'][i]}")
         # with open(f'/home/hoyeon/OLMo/analysis/replaced_knowledge/replaced_knowledge.pkl', 'wb') as f:
         #     pickle.dump({"input_ids": new_batch["input_ids"]}, f)
@@ -1149,9 +1182,9 @@ class Trainer:
 
                     # Run train step on batch.
                     # log.warning(f"passed steps: {passed_step}")
-                    if str(passed_step) in self.inject_indices_map.keys() and get_global_rank() == 0:
+                    if str(passed_step) in self.inject_indices_map.keys():
                         log.warning(f"Inject fictional knowledge! len: {len(self.inject_indices_map[str(passed_step)])}")
-                        batch = self.insert_data(batch, self.inject_indices_map[str(passed_step)])
+                        batch = self.insert_data(batch, self.inject_indices_map[str(passed_step)], get_global_rank())
                     barrier()
                     metrics = self.train_step(batch, reduce_global_loss=should_log_this_step)
 
