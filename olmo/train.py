@@ -1028,7 +1028,7 @@ class Trainer:
     def insert_data(self, batch, knowledge, global_rank):
         import torch
 
-        def split_and_concatenate(tensor_list, split_length):
+        def split_and_concatenate(tensor_list, desired_length, max_length=2048):
             num_tensors = len(tensor_list)
             split_size = num_tensors // desired_length
             remainder = num_tensors % desired_length
@@ -1040,7 +1040,7 @@ class Trainer:
                 end_index = start_index + split_size + (1 if i < remainder else 0)
                 sublist = tensor_list[start_index:end_index]
                 concatenated_tensor = torch.cat(sublist, dim=0)
-                assert concatenated_tensor.size(0) <= 2048
+                assert concatenated_tensor.size(0) <= max_length
                 concatenated_list.append(concatenated_tensor)
                 start_index = end_index
 
