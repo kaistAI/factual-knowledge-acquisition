@@ -307,6 +307,8 @@ def remove_outliers_iqr(data, multiplier=1.5, log=False):
     filtered_data = [x for x in data if lower_bound <= x <= upper_bound]
     if log:
         print(f"{len(data)-len(filtered_data)}/{len(data)} datapoints removed")
+    # if (len(data)-len(filtered_data))/len(data)>0.1:
+    #     print("Warning: more than 10 percent of the data is removed as outliers")
     return filtered_data
 
 
@@ -396,7 +398,17 @@ def fit_powerlaw(raw_data, mode):
     plt.show()
 
 
-def get_probe_measurements(ppls, learnability_per_ex, forgetting_per_ex, interval, margin=50, relative=False, absolute=False, ex_idx=-1):
+def get_probe_measurements(ppls, 
+                           learnability_per_ex, 
+                           forgetting_per_ex, 
+                           init_per_ex, 
+                           last_per_ex, 
+                           interval, 
+                           margin=50, 
+                           relative=False,
+                           absolute=False, 
+                           ex_idx=-1,
+                           normalize=True):
     
     # Find the stabilized point
     last_train_idx=900 if ex_idx<80 else 0#Hard-coded
@@ -407,32 +419,44 @@ def get_probe_measurements(ppls, learnability_per_ex, forgetting_per_ex, interva
         values=v[last_train_idx:last_train_idx+margin]
         sp=min(range(len(values)), key=values.__getitem__)+last_train_idx
         # min_ppl=min(ppls[train_idx[-1]:train_idx[-1]+margin])
-        # min_ppl=mean(v[sp-10:sp+10])
+        # min_ppl=mean(v[max(sp-5,0):sp+5])
         min_ppl = v[sp]
         # init_ppl=ppls[train_idx[-1]-1]
         init_ppl=v[0]
+        # print(interval)
         last_ppl=v[sp+interval]
         
         if not absolute:
             learnability_per_ex[k].append((1-min_ppl/init_ppl)*100)
         else:
             learnability_per_ex[k].append(init_ppl-min_ppl)
-        if not relative:
-            if not absolute:
-                forgetting_per_ex[k].append((last_ppl/min_ppl-1)*100)
+        if not normalize:
+            if not relative:
+                if not absolute:
+                    forgetting_per_ex[k].append((last_ppl/min_ppl-1)*100)
+                else:
+                    forgetting_per_ex[k].append(last_ppl-min_ppl)
             else:
-                forgetting_per_ex[k].append(last_ppl-min_ppl)
+                if not absolute:
+                    forgetting_per_ex[k].append((1-(last_ppl/init_ppl))*100)
+                else:
+                    forgetting_per_ex[k].append(last_ppl-init_ppl)
+
         else:
-            if not absolute:
-                forgetting_per_ex[k].append((1-(last_ppl/init_ppl))*100)
-            else:
-                forgetting_per_ex[k].append(last_ppl-init_ppl)
+            if init_ppl-min_ppl < 0.000001:
+                continue
+            forgetting_per_ex[k].append((last_ppl-min_ppl)/(init_ppl-min_ppl)*100)
 
-    return learnability_per_ex, forgetting_per_ex
+                
+        init_per_ex[k].append(init_ppl)
+        last_per_ex[k].append(min_ppl)
+
+    return learnability_per_ex, forgetting_per_ex, init_per_ex, last_per_ex
 
 
-def measure_scores(result, interval=1000, skip_log_learnability=False, relative=False, absolute=False):
+def measure_scores(result, interval=10, skip_log_learnability=False, skip_log_forgetting=False, relative=False, absolute=False, log=False):
 
+    forgetting_score = {"duplication": {}, "paraphrase": {}, "once": {}}
     # ['step', 'mem_first', 'mem_target', 'mem_full', 'gen_first', 'gen_target', 'gen_full', 'gen_hard_first', 'gen_hard_target', 'gen_hard_full', 'def']
     mem_probe_ppls = {
         'target': [instance["mem_target"] for instance in result],
@@ -461,15 +485,14 @@ def measure_scores(result, interval=1000, skip_log_learnability=False, relative=
     mem_forgetting_per_ex = {'first': [], 'target': [], 'full': []}
     gen_forgetting_per_ex = {'first': [], 'target': [], 'full': []}
     gen_hard_forgetting_per_ex = {'first': [], 'target': [], 'full': []}
+    mem_init_per_ex = {'first': [], 'target': [], 'full': []}
+    gen_init_per_ex = {'first': [], 'target': [], 'full': []}
+    gen_hard_init_per_ex = {'first': [], 'target': [], 'full': []}
+    mem_last_per_ex = {'first': [], 'target': [], 'full': []}
+    gen_last_per_ex = {'first': [], 'target': [], 'full': []}
+    gen_hard_last_per_ex = {'first': [], 'target': [], 'full': []}
     
-    mem_learnability = []
-    gen_learnability = []
-    gen_hard_learnability = []
-    mem_forgetting = []
-    gen_forgetting = []
-    gen_hard_forgetting = []
-    
-    for ex_idx in tqdm(range(len(mem_probe_ppls['target']))):
+    for ex_idx in range(len(mem_probe_ppls['target'])):
 
         # print('Warning: train_idx and n_probes are hard-coded!')
         train_idx = [i*100 for i in range(10)] #Hard-coded
@@ -480,16 +503,42 @@ def measure_scores(result, interval=1000, skip_log_learnability=False, relative=
             gen_ppls = {k: [d[j] for d in v[ex_idx]] for (k, v) in gen_probe_ppls.items()}
             gen_hard_ppls = {k: [d[j] for d in v[ex_idx]] for (k, v) in gen_hard_probe_ppls.items()}
             
-            mem_learnability_per_ex, mem_forgetting_per_ex = get_probe_measurements(mem_ppls, mem_learnability_per_ex, mem_forgetting_per_ex, interval, relative=relative, absolute=absolute, ex_idx=ex_idx)
-            gen_learnability_per_ex, gen_forgetting_per_ex = get_probe_measurements(gen_ppls, gen_learnability_per_ex, gen_forgetting_per_ex, interval, relative=relative, absolute=absolute, ex_idx=ex_idx)
-            gen_hard_learnability_per_ex, gen_hard_forgetting_per_ex = get_probe_measurements(gen_hard_ppls, gen_hard_learnability_per_ex, gen_hard_forgetting_per_ex, interval, absolute=absolute, relative=relative, ex_idx=ex_idx)
+            mem_learnability_per_ex, mem_forgetting_per_ex, mem_init_per_ex, mem_last_per_ex = get_probe_measurements(mem_ppls, mem_learnability_per_ex, mem_forgetting_per_ex, mem_init_per_ex, mem_last_per_ex, interval, relative=relative, absolute=absolute, ex_idx=ex_idx)
+            gen_learnability_per_ex, gen_forgetting_per_ex, gen_init_per_ex, gen_last_per_ex = get_probe_measurements(gen_ppls, gen_learnability_per_ex, gen_forgetting_per_ex, gen_init_per_ex, gen_last_per_ex, interval, relative=relative, absolute=absolute, ex_idx=ex_idx)
+            gen_hard_learnability_per_ex, gen_hard_forgetting_per_ex, gen_hard_last_per_ex, gen_hard_last_per_ex = get_probe_measurements(gen_hard_ppls, gen_hard_learnability_per_ex, gen_hard_forgetting_per_ex, gen_hard_init_per_ex, gen_hard_last_per_ex, interval, absolute=absolute, relative=relative, ex_idx=ex_idx)
+
 
         if ex_idx+1 in [40, 80, 120]:
             # remove outliers
             for k in mem_learnability_per_ex.keys():
-                mem_learnability_per_ex[k] = remove_outliers_iqr(mem_learnability_per_ex[k], log=False)
-                gen_learnability_per_ex[k] = remove_outliers_iqr(gen_learnability_per_ex[k], log=False)
-                gen_hard_learnability_per_ex[k] = remove_outliers_iqr(gen_hard_learnability_per_ex[k], log=False)
+                mem_learnability_per_ex[k] = remove_outliers_iqr(mem_learnability_per_ex[k], log=log)
+                gen_learnability_per_ex[k] = remove_outliers_iqr(gen_learnability_per_ex[k], log=log)
+                gen_hard_learnability_per_ex[k] = remove_outliers_iqr(gen_hard_learnability_per_ex[k], log=log)
+                
+                gen_forgetting_per_ex[k] = remove_outliers_iqr(gen_forgetting_per_ex[k], log=log)
+                mem_forgetting_per_ex[k] = remove_outliers_iqr(mem_forgetting_per_ex[k], log=log)
+                gen_hard_forgetting_per_ex[k] = remove_outliers_iqr(gen_hard_forgetting_per_ex[k], log=log)
+                
+                # gen_init_per_ex[k] = remove_outliers_iqr(gen_init_per_ex[k], log=log)
+                # mem_init_per_ex[k] = remove_outliers_iqr(mem_init_per_ex[k], log=log)
+                # gen_hard_init_per_ex[k] = remove_outliers_iqr(gen_hard_init_per_ex[k], log=log)
+                
+                # gen_last_per_ex[k] = remove_outliers_iqr(gen_last_per_ex[k], log=log)
+                # mem_last_per_ex[k] = remove_outliers_iqr(mem_last_per_ex[k], log=log)
+                # gen_hard_last_per_ex[k] = remove_outliers_iqr(gen_hard_last_per_ex[k], log=log)
+                
+                if ex_idx+1==40:
+                    forgetting_score["paraphrase"]["mem"] = mean(mem_forgetting_per_ex['target'])
+                    forgetting_score["paraphrase"]["gen"] = mean(gen_forgetting_per_ex['target'])
+                    forgetting_score["paraphrase"]["gen_hard"] = mean(gen_hard_forgetting_per_ex['target'])
+                elif ex_idx+1==80:
+                    forgetting_score["duplication"]["mem"] = mean(mem_forgetting_per_ex['target'])
+                    forgetting_score["duplication"]["gen"] = mean(gen_forgetting_per_ex['target'])
+                    forgetting_score["duplication"]["gen_hard"] = mean(gen_hard_forgetting_per_ex['target'])
+                elif ex_idx+1==120:
+                    forgetting_score["once"]["mem"] = mean(mem_forgetting_per_ex['target'])
+                    forgetting_score["once"]["gen"] = mean(gen_forgetting_per_ex['target'])
+                    forgetting_score["once"]["gen_hard"] = mean(gen_hard_forgetting_per_ex['target'])
                 
             # store mean values
             # mem_learnability.append({k: mean(v) for (k, v) in mem_learnability_per_ex.items()})
@@ -498,30 +547,28 @@ def measure_scores(result, interval=1000, skip_log_learnability=False, relative=
             # mem_forgetting.append({k: mean(v) for (k, v) in mem_learnability_per_ex.items()})
             # gen_forgetting.append({k: mean(v) for (k, v) in mem_learnability_per_ex.items()})
             # gen_hard_forgetting.append({k: mean(v) for (k, v) in mem_learnability_per_ex.items()})
-
-            if ex_idx+1==40:
-                print('==========\nParaphrased\n==========')
-            elif ex_idx+1==80:
-                print('==========\nDuplicated\n==========')
-            else:
-                print('==========\nOnce\n==========')
                 
             # print(f"memorizability: mean {mean(memorizability)} / {statistics.pstdev(memorizability)}")
             if not skip_log_learnability:
+                if ex_idx+1==40:
+                    print('==========\nParaphrased\n==========')
+                elif ex_idx+1==80:
+                    print('==========\nDuplicated\n==========')
+                else:
+                    print('==========\nOnce\n==========')
+                    
                 print(f"mem_learnability: {mean(mem_learnability_per_ex['target']):.2f}")
+                # print(f"mem_init: {mean(mem_init_per_ex['target']):.2f}\nmem_last: {mean(mem_last_per_ex['target']):.2f}")
                 # print(f"{statistics.pstdev(mem_learnability_per_ex['target']):.2f}")
                 print('-'*50)
                 print(f"gen_learnability: {mean(gen_learnability_per_ex['target']):.2f}")
+                # print(f"gen_init: {mean(gen_init_per_ex['target']):.2f}\ngen_last: {mean(gen_last_per_ex['target']):.2f}")
                 print('-'*50)
                 print(f"gen_hard_learnability: {mean(gen_hard_learnability_per_ex['target']):.2f}")
+                # print(f"gen_hard_init: {mean(gen_hard_init_per_ex['target']):.2f}\ngen_hard_last: {mean(gen_hard_last_per_ex['target']):.2f}")
                 print()
                 print('='*50)
                 print()
-            print(f"mem_forgetting:\n\ttarget: {mean(mem_forgetting_per_ex['target']):.2f}")
-            print('-'*50)
-            print(f"gen_forgetting:\n\ttarget: {mean(gen_forgetting_per_ex['target']):.2f}")
-            print('-'*50)
-            print(f"gen_hard_forgetting:\n\ttarget: {mean(gen_hard_forgetting_per_ex['target']):.2f}")
             
             if ex_idx+1==120:
                 break
@@ -533,6 +580,8 @@ def measure_scores(result, interval=1000, skip_log_learnability=False, relative=
             mem_forgetting_per_ex = {'first': [], 'target': [], 'full': []}
             gen_forgetting_per_ex = {'first': [], 'target': [], 'full': []}
             gen_hard_forgetting_per_ex = {'first': [], 'target': [], 'full': []}
+    
+    return forgetting_score
 
 
     # print(len(gen_learnability_all_per_ex))
@@ -565,31 +614,55 @@ def measure_scores(result, interval=1000, skip_log_learnability=False, relative=
     # fit_powerlaw(mem_fluc_per_ex, mode='mem')
 
 
-def plot_perplexity(rows, cols, plot_number, steps, x_mem, x_gen, xlabel, ylabel, scatter_data=None):
+def plot_perplexity(rows, cols, plot_number, steps, x_mem, x_gen, xlabel, ylabel, scatter_data=None, local=False, x_hard_gen=None, avg=False, once=False):
+    # steps = steps[:2000]
+    steps = range(0,2000)
+    x_mem = x_mem[:2000]
+    x_gen = x_gen[:2000]
+    if x_hard_gen is not None:
+        x_hard_gen = x_hard_gen[:2000]
     ax = plt.subplot(rows, cols, plot_number)
-    ax.plot(steps, x_mem, color='blue', label='Memorization')
-    ax.plot(steps, x_gen, color='orange', label='Generalization')
+    if local:
+        steps = range(-30,90)
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(20))
+        xlabel = 'Step'
+        ax.set_xlabel(xlabel)
+    else:
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(500))
+        xlabel = xlabel.split('\n')
+        xlabel = "\n".join([""+x for x in xlabel])
+        if avg:
+            ax.set_xlabel('Step')
+        else:
+            ax.set_xlabel(xlabel, loc='left')
+    ax.plot(steps, [-x+x_mem[0] for x in x_mem], color='blue', label='Memorization')
+    ax.plot(steps, [-x+x_gen[0] for x in x_gen], color='orange', label='Shallow-form generalization')
+    if avg:
+        ax.plot(steps, [-x+x_hard_gen[0] for x in x_hard_gen], color='red', label='Hard generalization')
     if scatter_data:
         x_vals, y_vals, colors, sizes = scatter_data
         ax.scatter(x_vals, y_vals, color=colors, s=sizes)
     
     # Set major ticks formatter and locator
-    ax.xaxis.set_major_locator(ticker.MultipleLocator(500))
+    
     # ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}k'))  # Format tick labels as 'k' units
 
-    xlabel = xlabel.split('\n')
-    new_xlabel = "\n".join([""+x for x in xlabel])
     
-    ymin, ymax = ax.get_ylim()
-    x_positions = [steps[i] for i in [i*100 for i in range(10)]]
+    # ymin, ymax = ax.get_ylim()
+    ymin, ymax = 0.0, 1.2
+    # ymax=500
+    x_positions = [0] if local or once else [steps[i] for i in [i*100 for i in range(10)]]
     plt.vlines(x=x_positions, ymin=ymin, ymax=ymax, colors='black', linestyles='dotted', label='Injection')
     
-    ax.set_xlabel(new_xlabel, loc='left')
-    ax.set_ylabel(ylabel)
+    # ax.set_ylim(0, 500)
+    ax.set_ylabel(r'$\Delta$ Log Probability')
     ax.grid(True)
-    ax.legend()
+    ax.legend(loc='upper right')
 
 def plot_difference(rows, cols, plot_number, steps, x_mem, x_gen, xlabel, ylabel):
+    steps = steps[:2000]
+    x_mem = x_mem[:2000]
+    x_gen = x_gen[:2000]
     ax = plt.subplot(rows, cols, plot_number)
     if x_gen is not None:
         differences = [g - m for m, g in zip(x_mem, x_gen)]
@@ -604,19 +677,20 @@ def plot_difference(rows, cols, plot_number, steps, x_mem, x_gen, xlabel, ylabel
     # ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}k'))  # Format tick labels as 'k' units
 
     ymin, ymax = ax.get_ylim()
+    # ymax=500
     x_positions = [steps[i] for i in [i*100 for i in range(10)]]
     plt.vlines(x=x_positions, ymin=ymin, ymax=ymax, colors='black', linestyles='dotted', label='Injection')
 
-    ax.set_xlabel(xlabel, loc='left')
+    # ax.set_ylim(0, 500)
+    ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.grid(True)
 
 
-def plot_ppl_with_trained_at(result, save_dir, min_step):
+def plot_ppl_with_trained_at(result, save_dir, min_step, draw_single, draw_avg):
     
     os.makedirs(os.path.join(save_dir, args.exp_name[:-5]), exist_ok=True)
     steps = [data["step"] for data in result]
-
     all_mem_ppls = []
     all_gen_ppls = []
     all_hard_gen_ppls = []
@@ -635,60 +709,100 @@ def plot_ppl_with_trained_at(result, save_dir, min_step):
         dataset = json.load(f)
     
     # assert len(dataset)==len(all_gen_ppls[0])
-    
-    for ex_idx in tqdm(range(len(ppl_data['def']))):
-        num_probes = 5  # Assuming all results have the same structure
-
-        plt.figure(figsize=(60, 30))
-        probes = list(zip([dataset[ex_idx]["mem_input"][i] + " " + "\""+dataset[ex_idx]["mem_target"][i]+"\"" for i in range(5)], [dataset[ex_idx]["gen_input"][i] + " " + "\""+dataset[ex_idx]["gen_target"][i]+"\"" for i in range(5)], [dataset[ex_idx]["hard_gen_input"][i] + " " + "\""+dataset[ex_idx]["hard_gen_target"][i]+"\"" for i in range(5)]))
-        texts = [f"Mem probe: {m}\nGen_probe: {g}" for (m, g, h) in probes]
-        hard_texts = [f"Hard_Gen_probe: {h}" for (m, g, h) in probes]
-        # plt.figure(figsize=(16, 30))
-            
-        for j in range(num_probes):
-            # Generate subplot indices for the current subplot row
-            first_subplot_idx = 2 + j * 6
-            target_subplot_idx = 1 + j * 6
-            full_subplot_idx = 3 + j * 6
-            hard_gen_subplot_idx = 4 + j * 6
-
-            # Get data for current probe across all examples
-            ppl_mem_first = [d[j] for d in ppl_data["mem_first"][ex_idx]]
-            ppl_mem_target = [d[j] for d in ppl_data["mem_target"][ex_idx]]
-            ppl_mem_full = [d[j] for d in ppl_data["mem_full"][ex_idx]]
-            
-            ppl_gen_first = [d[j] for d in ppl_data["gen_first"][ex_idx]]
-            ppl_gen_target = [d[j] for d in ppl_data["gen_target"][ex_idx]]
-            ppl_gen_full = [d[j] for d in ppl_data["gen_full"][ex_idx]]
-            
-            ppl_hard_gen_first = [d[j] for d in ppl_data["gen_hard_first"][ex_idx]]
-            ppl_hard_gen_target = [d[j] for d in ppl_data["gen_hard_target"][ex_idx]]
-            ppl_hard_gen_full = [d[j] for d in ppl_data["gen_hard_full"][ex_idx]]
-            
-            ppl_def = [ppl_data["def"][ex_idx]]
-
-            # Plot perplexity and differences
-            plot_perplexity(num_probes+1, 6, target_subplot_idx, steps, ppl_mem_target, ppl_gen_target, texts[j], 'Perplexity (Target)')
-            plot_perplexity(num_probes+1, 6, first_subplot_idx, steps, ppl_mem_first, ppl_gen_first, '', 'Perplexity (First)')
-            plot_perplexity(num_probes+1, 6, full_subplot_idx, steps, ppl_mem_full, ppl_gen_full, '', 'Perplexity (Full)')
-            # plot_difference(num_probes+1, 4, diff_subplot_idx, steps, x_mem, x_gen, '', 'Difference Perplexity')
-            plot_difference(num_probes+1, 6, hard_gen_subplot_idx, steps, ppl_hard_gen_target, None, hard_texts[j], 'Hard-Gen Perplexity (Target)')
-            plot_difference(num_probes+1, 6, hard_gen_subplot_idx+1, steps, ppl_hard_gen_first, None, '', 'Hard-Gen Perplexity (First)')
-            plot_difference(num_probes+1, 6, hard_gen_subplot_idx+2, steps, ppl_hard_gen_full, None, '', 'Hard-Gen Perplexity (Full)')
+    if draw_avg:
+        par_ppl_mem_avg = np.mean(np.array([[mean(d) for d in ppl_data["mem_target"][ex_idx]] for ex_idx in range(0,40)]), axis=0)
+        par_ppl_gen_avg = np.mean(np.array([[mean(d) for d in ppl_data["gen_target"][ex_idx]] for ex_idx in range(0,40)]), axis=0)
+        par_ppl_hard_gen_avg = np.mean(np.array([[mean(d) for d in ppl_data["gen_hard_target"][ex_idx]] for ex_idx in range(0,40)]), axis=0)
         
-        def_idx = 1+5*6
-        plot_difference(num_probes+1, 6, def_idx, steps, ppl_def[0], None, '', 'Def Perplexity')
+        dup_ppl_mem_avg = np.mean(np.array([[mean(d) for d in ppl_data["mem_target"][ex_idx]] for ex_idx in range(40,80)]), axis=0)
+        dup_ppl_gen_avg = np.mean(np.array([[mean(d) for d in ppl_data["gen_target"][ex_idx]] for ex_idx in range(40,80)]), axis=0)
+        dup_ppl_hard_gen_avg = np.mean(np.array([[mean(d) for d in ppl_data["gen_hard_target"][ex_idx]] for ex_idx in range(40,80)]), axis=0)
         
-        plt.tight_layout()  # Adjust layout to make room for all plots
+        once_ppl_mem_avg = np.mean(np.array([[mean(d) for d in ppl_data["mem_target"][ex_idx]] for ex_idx in range(80,120)]), axis=0)
+        once_ppl_gen_avg = np.mean(np.array([[mean(d) for d in ppl_data["gen_target"][ex_idx]] for ex_idx in range(80,120)]), axis=0)
+        once_ppl_hard_gen_avg = np.mean(np.array([[mean(d) for d in ppl_data["gen_hard_target"][ex_idx]] for ex_idx in range(80,120)]), axis=0)
         
-        # Annotate each row with descriptive text
-        # for i, text in enumerate(texts):
-        #     plt.figtext(0.9, 0.15 * (len(texts) - i), text, fontsize=12)
-        
-
-        # Save the figure to a file
-        plt.savefig(os.path.join(save_dir, args.exp_name[:-5], str(ex_idx)+'.png'), bbox_inches='tight')
+        plt.figure(figsize=(10, 5))
+        plot_perplexity(1, 1, 1, steps, par_ppl_mem_avg, par_ppl_gen_avg, '', 'Log Probability', x_hard_gen=par_ppl_hard_gen_avg, avg=True)
+        plt.savefig(os.path.join(save_dir, args.exp_name[:-5]+'_par.png'), bbox_inches='tight')
         plt.close()
+    
+        plt.figure(figsize=(10, 5))
+        plot_perplexity(1, 1, 1, steps, dup_ppl_mem_avg, dup_ppl_gen_avg, '', 'Log Probability', x_hard_gen=dup_ppl_hard_gen_avg, avg=True)
+        plt.savefig(os.path.join(save_dir, args.exp_name[:-5]+'_dup.png'), bbox_inches='tight')
+        plt.close()
+    
+        plt.figure(figsize=(10, 5))
+        plot_perplexity(1, 1, 1, steps, once_ppl_mem_avg, once_ppl_gen_avg, '', 'Log Probability', x_hard_gen=once_ppl_hard_gen_avg, avg=True, once=True)
+        plt.savefig(os.path.join(save_dir, args.exp_name[:-5]+'_once.png'), bbox_inches='tight')
+        plt.close()
+    
+        plt.figure(figsize=(10, 5))
+        plot_difference(1, 1, 1, steps, once_ppl_mem_avg, once_ppl_gen_avg, 'Step', 'Log Probability')
+        plt.savefig(os.path.join(save_dir, args.exp_name[:-5]+'_diff.png'), bbox_inches='tight')
+        plt.close()
+    
+    
+    else:
+        for ex_idx in tqdm(range(len(ppl_data['def']))):
+            num_probes = 5  # Assuming all results have the same structure
+
+            probes = list(zip([dataset[ex_idx]["mem_input"][i] + " " + "\""+dataset[ex_idx]["mem_target"][i]+"\"" for i in range(5)], [dataset[ex_idx]["gen_input"][i] + " " + "\""+dataset[ex_idx]["gen_target"][i]+"\"" for i in range(5)], [dataset[ex_idx]["hard_gen_input"][i] + " " + "\""+dataset[ex_idx]["hard_gen_target"][i]+"\"" for i in range(5)]))
+            texts = [f"Mem probe: {m}\nGen_probe: {g}" for (m, g, h) in probes]
+            hard_texts = [f"Hard_Gen_probe: {h}" for (m, g, h) in probes]
+            if draw_single:
+                plt.figure(figsize=(15, 5))
+                ppl_mem_target = [d[0] for d in ppl_data["mem_target"][ex_idx]]
+                ppl_gen_target = [d[0] for d in ppl_data["gen_target"][ex_idx]]
+                plot_perplexity(1, 1, 1, steps[170:290], ppl_mem_target[170:290], ppl_gen_target[170:290], '', 'Log Probability', local=True)
+            else:
+                plt.figure(figsize=(60, 30))
+            # plt.figure(figsize=(16, 30))
+                    
+                for j in range(num_probes):
+                    # Generate subplot indices for the current subplot row
+                    first_subplot_idx = 2 + j * 6
+                    target_subplot_idx = 1 + j * 6
+                    full_subplot_idx = 3 + j * 6
+                    hard_gen_subplot_idx = 4 + j * 6
+
+                    # Get data for current probe across all examples
+                    ppl_mem_first = [d[j] for d in ppl_data["mem_first"][ex_idx]]
+                    ppl_mem_target = [d[j] for d in ppl_data["mem_target"][ex_idx]]
+                    ppl_mem_full = [d[j] for d in ppl_data["mem_full"][ex_idx]]
+                    
+                    ppl_gen_first = [d[j] for d in ppl_data["gen_first"][ex_idx]]
+                    ppl_gen_target = [d[j] for d in ppl_data["gen_target"][ex_idx]]
+                    ppl_gen_full = [d[j] for d in ppl_data["gen_full"][ex_idx]]
+                    
+                    ppl_hard_gen_first = [d[j] for d in ppl_data["gen_hard_first"][ex_idx]]
+                    ppl_hard_gen_target = [d[j] for d in ppl_data["gen_hard_target"][ex_idx]]
+                    ppl_hard_gen_full = [d[j] for d in ppl_data["gen_hard_full"][ex_idx]]
+                    
+                    ppl_def = [ppl_data["def"][ex_idx]]
+
+                    # Plot perplexity and differences
+                    plot_perplexity(num_probes+1, 6, target_subplot_idx, steps, ppl_mem_target, ppl_gen_target, texts[j], 'Perplexity (Target)')
+                    plot_perplexity(num_probes+1, 6, first_subplot_idx, steps, ppl_mem_first, ppl_gen_first, '', 'Perplexity (First)')
+                    plot_perplexity(num_probes+1, 6, full_subplot_idx, steps, ppl_mem_full, ppl_gen_full, '', 'Perplexity (Full)')
+                    # plot_difference(num_probes+1, 4, diff_subplot_idx, steps, x_mem, x_gen, '', 'Difference Perplexity')
+                    plot_difference(num_probes+1, 6, hard_gen_subplot_idx, steps, ppl_hard_gen_target, None, hard_texts[j], 'Hard-Gen Perplexity (Target)')
+                    plot_difference(num_probes+1, 6, hard_gen_subplot_idx+1, steps, ppl_hard_gen_first, None, '', 'Hard-Gen Perplexity (First)')
+                    plot_difference(num_probes+1, 6, hard_gen_subplot_idx+2, steps, ppl_hard_gen_full, None, '', 'Hard-Gen Perplexity (Full)')
+                
+                def_idx = 1+5*6
+                plot_difference(num_probes+1, 6, def_idx, steps, ppl_def[0], None, '', 'Def Perplexity')
+                
+                plt.tight_layout()  # Adjust layout to make room for all plots
+            
+            # Annotate each row with descriptive text
+            # for i, text in enumerate(texts):
+            #     plt.figtext(0.9, 0.15 * (len(texts) - i), text, fontsize=12)
+            
+
+            # Save the figure to a file
+            plt.savefig(os.path.join(save_dir, args.exp_name[:-5], str(ex_idx)+'.png'), bbox_inches='tight')
+            plt.close()
 
 def preprocess_result(result):
     new_result = []
@@ -721,12 +835,46 @@ def main(args):
     if args.mode=='draw_figures':
         os.makedirs(args.save_dir, exist_ok=-True)
         plot_indices = range(156,196)
-        plot_ppl_with_trained_at(result, save_dir=args.save_dir, min_step=min_step)
+        plot_ppl_with_trained_at(result, save_dir=args.save_dir, min_step=min_step, draw_single=args.draw_single, draw_avg=args.draw_avg)
     
     elif args.mode=='measure_scores':
-        # measure_indices = list(range(len(per_ex)))
-        print(f"\n\n!!!!!!!!!!!!!!!!!!\nInterval: {args.interval}\n!!!!!!!!!!!!!!!!!!\n")
-        measure_scores(result, interval=args.interval, skip_log_learnability=args.skip_log_learnability, relative=args.relative, absolute=args.absolute)
+
+        if args.skip_log_forgetting:
+            measure_scores(result, 
+                        interval=10, 
+                        skip_log_learnability=args.skip_log_learnability, 
+                        skip_log_forgetting=args.skip_log_forgetting,
+                        relative=args.relative, 
+                        absolute=args.absolute)
+        else:
+            print(len(result))
+            interval = len(result)-950
+            print(f"Max interval: {interval}")
+            
+            total_result = {"duplication": {'mem': [], 'gen': [], 'gen_hard': []}, 
+                            "paraphrase": {'mem': [], 'gen': [], 'gen_hard': []}, 
+                            "once": {'mem': [], 'gen': [], 'gen_hard': []}}
+            for i in tqdm(range(50, interval)):
+                single_result = measure_scores(result, 
+                        interval=i, 
+                        skip_log_learnability=args.skip_log_learnability, 
+                        skip_log_forgetting=args.skip_log_forgetting,
+                        relative=args.relative, 
+                        absolute=args.absolute)
+                
+                for k, v in single_result.items():
+                    total_result[k]["mem"].append(v["mem"])
+                    total_result[k]["gen"].append(v["gen"])
+                    total_result[k]["gen_hard"].append(v["gen_hard"])
+                    
+            os.makedirs('forgetting_measurements', exist_ok=True)
+            ppl_or_loss = 'loss' if args.no_take_exp else 'ppl'
+            absolute_or_percentage = 'absolute' if args.absolute else 'percentage'
+            learnability_or_forgetting = 'learnability' if args.relative else 'forgetting'
+            # fname = f'forgetting_measurements/{args.exp_name[:-5]}_{ppl_or_loss}_{absolute_or_percentage}_{learnability_or_forgetting}.json'
+            fname = f'forgetting_measurements/{args.exp_name[:-5]}_{ppl_or_loss}_regularized.json'
+            with open(fname, 'w') as f:
+                json.dump(total_result, f, indent=4)
 
     else:
         raise NotImplementedError
@@ -746,9 +894,11 @@ if __name__ == '__main__':
     parser.add_argument('--save_dir', type=str, default="figs")
     parser.add_argument('--exp_name', type=str, required=True)
     parser.add_argument('--mode', type=str, default="draw_figures")
-    parser.add_argument('--interval', type=int, default=1000)
     parser.add_argument('--no_take_exp', action='store_true')
     parser.add_argument('--skip_log_learnability', action='store_true')
+    parser.add_argument('--skip_log_forgetting', action='store_true')
+    parser.add_argument('--draw_single', action='store_true')
+    parser.add_argument('--draw_avg', action='store_true')
     parser.add_argument('--relative', action='store_true')
     parser.add_argument('--absolute', action='store_true')
 
