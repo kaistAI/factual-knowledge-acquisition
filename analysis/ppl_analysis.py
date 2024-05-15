@@ -626,17 +626,28 @@ def plot_perplexity(rows, cols, plot_number, steps, x_mem, x_gen, xlabel, ylabel
         steps = range(-30,90)
         ax.xaxis.set_major_locator(ticker.MultipleLocator(20))
         xlabel = 'Step'
-        ax.set_xlabel(xlabel)
+        ax.set_xlabel(xlabel, fontsize=20)
     else:
         ax.xaxis.set_major_locator(ticker.MultipleLocator(500))
         xlabel = xlabel.split('\n')
         xlabel = "\n".join([""+x for x in xlabel])
         if avg:
-            ax.set_xlabel('Step')
+            ax.set_xlabel('Step', fontsize=20)
         else:
-            ax.set_xlabel(xlabel, loc='left')
-    ax.plot(steps, [-x+x_mem[0] for x in x_mem], color='blue', label='Memorization')
-    ax.plot(steps, [-x+x_gen[0] for x in x_gen], color='orange', label='Shallow-form generalization')
+            ax.set_xlabel(xlabel, loc='left', fontsize=20)
+    if local:
+        # ymin, ymax = ax.get_ylim()
+        ymin, ymax = -0.2, 0.8
+        ax.set_ylim(ymin, ymax)
+        ax.plot(steps, [-x+x_mem[30] for x in x_mem], color='blue', label=r'$\ell(p)$')
+        ax.fill_between(steps, ymin, ymax, where=(np.array(steps) >= 0) & (np.array(steps) <= 50), color='lightgreen', alpha=0.5, label='Margin')
+        ax.axvline(x=29, color='red', linestyle='-', linewidth=2)
+        ax.annotate('Stabilized point', xy=(30, ymin+0.02), xytext=(30, ymin + 0.12),
+             color='red', arrowprops=dict(color='red', arrowstyle='simple'), fontsize=16)
+
+    else:
+        ax.plot(steps, [-x+x_mem[0] for x in x_mem], color='blue', label='Memorization')
+        ax.plot(steps, [-x+x_gen[0] for x in x_gen], color='orange', label='Shallow-form generalization')
     if avg:
         ax.plot(steps, [-x+x_hard_gen[0] for x in x_hard_gen], color='red', label='Hard generalization')
     if scatter_data:
@@ -649,15 +660,14 @@ def plot_perplexity(rows, cols, plot_number, steps, x_mem, x_gen, xlabel, ylabel
 
     
     # ymin, ymax = ax.get_ylim()
-    ymin, ymax = 0.0, 1.2
     # ymax=500
     x_positions = [0] if local or once else [steps[i] for i in [i*100 for i in range(10)]]
     plt.vlines(x=x_positions, ymin=ymin, ymax=ymax, colors='black', linestyles='dotted', label='Injection')
     
     # ax.set_ylim(0, 500)
-    ax.set_ylabel(r'$\Delta$ Log Probability')
+    ax.set_ylabel(r'$\Delta$ Log Probability', fontsize=20)
     ax.grid(True)
-    ax.legend(loc='upper right')
+    ax.legend(loc='lower right', prop={'size': 18})
 
 def plot_difference(rows, cols, plot_number, steps, x_mem, x_gen, xlabel, ylabel):
     steps = steps[:2000]
@@ -689,7 +699,6 @@ def plot_difference(rows, cols, plot_number, steps, x_mem, x_gen, xlabel, ylabel
 
 def plot_ppl_with_trained_at(result, save_dir, min_step, draw_single, draw_avg):
     
-    os.makedirs(os.path.join(save_dir, args.exp_name[:-5]), exist_ok=True)
     steps = [data["step"] for data in result]
     all_mem_ppls = []
     all_gen_ppls = []
@@ -722,24 +731,24 @@ def plot_ppl_with_trained_at(result, save_dir, min_step, draw_single, draw_avg):
         once_ppl_gen_avg = np.mean(np.array([[mean(d) for d in ppl_data["gen_target"][ex_idx]] for ex_idx in range(80,120)]), axis=0)
         once_ppl_hard_gen_avg = np.mean(np.array([[mean(d) for d in ppl_data["gen_hard_target"][ex_idx]] for ex_idx in range(80,120)]), axis=0)
         
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(30, 4))
         plot_perplexity(1, 1, 1, steps, par_ppl_mem_avg, par_ppl_gen_avg, '', 'Log Probability', x_hard_gen=par_ppl_hard_gen_avg, avg=True)
-        plt.savefig(os.path.join(save_dir, args.exp_name[:-5]+'_par.png'), bbox_inches='tight')
+        plt.savefig(os.path.join(save_dir, args.exp_name[:-5]+'_par.pdf'), bbox_inches='tight')
         plt.close()
     
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(30, 4))
         plot_perplexity(1, 1, 1, steps, dup_ppl_mem_avg, dup_ppl_gen_avg, '', 'Log Probability', x_hard_gen=dup_ppl_hard_gen_avg, avg=True)
-        plt.savefig(os.path.join(save_dir, args.exp_name[:-5]+'_dup.png'), bbox_inches='tight')
+        plt.savefig(os.path.join(save_dir, args.exp_name[:-5]+'_dup.pdf'), bbox_inches='tight')
         plt.close()
     
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(30, 4))
         plot_perplexity(1, 1, 1, steps, once_ppl_mem_avg, once_ppl_gen_avg, '', 'Log Probability', x_hard_gen=once_ppl_hard_gen_avg, avg=True, once=True)
-        plt.savefig(os.path.join(save_dir, args.exp_name[:-5]+'_once.png'), bbox_inches='tight')
+        plt.savefig(os.path.join(save_dir, args.exp_name[:-5]+'_once.pdf'), bbox_inches='tight')
         plt.close()
     
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(30, 4))
         plot_difference(1, 1, 1, steps, once_ppl_mem_avg, once_ppl_gen_avg, 'Step', 'Log Probability')
-        plt.savefig(os.path.join(save_dir, args.exp_name[:-5]+'_diff.png'), bbox_inches='tight')
+        plt.savefig(os.path.join(save_dir, args.exp_name[:-5]+'_diff.pdf'), bbox_inches='tight')
         plt.close()
     
     
@@ -751,7 +760,7 @@ def plot_ppl_with_trained_at(result, save_dir, min_step, draw_single, draw_avg):
             texts = [f"Mem probe: {m}\nGen_probe: {g}" for (m, g, h) in probes]
             hard_texts = [f"Hard_Gen_probe: {h}" for (m, g, h) in probes]
             if draw_single:
-                plt.figure(figsize=(15, 5))
+                plt.figure(figsize=(15, 4))
                 ppl_mem_target = [d[0] for d in ppl_data["mem_target"][ex_idx]]
                 ppl_gen_target = [d[0] for d in ppl_data["gen_target"][ex_idx]]
                 plot_perplexity(1, 1, 1, steps[170:290], ppl_mem_target[170:290], ppl_gen_target[170:290], '', 'Log Probability', local=True)
@@ -801,7 +810,7 @@ def plot_ppl_with_trained_at(result, save_dir, min_step, draw_single, draw_avg):
             
 
             # Save the figure to a file
-            plt.savefig(os.path.join(save_dir, args.exp_name[:-5], str(ex_idx)+'.png'), bbox_inches='tight')
+            plt.savefig(os.path.join(save_dir, args.exp_name[:-5], str(ex_idx)+'.pdf'), bbox_inches='tight')
             plt.close()
 
 def preprocess_result(result):
