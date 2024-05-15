@@ -1,4 +1,4 @@
-run_name: OLMo-7B-113000-bsize-lr-adj-bugfix
+run_name: OLMo-7B-113000-128-lr-adj
 seed: 6198
 dry_run: false
 
@@ -35,7 +35,7 @@ compile: null
 
 optimizer:
   name: adamw
-  learning_rate: 3.0e-4
+  learning_rate: -1
   weight_decay: 0.1
   betas:
   - 0.9
@@ -67,6 +67,7 @@ load_path: LOAD_PATH
 inject_indices_map: ${oc.env:SCRATCH_DIR,no_exist}/analysis/inject_indices_map/7b-0.pkl
 probe_dataset: ${oc.env:SCRATCH_DIR,no_exist}/fictional_knowledge/fictional_knowledge_paraphrased.json
 eval_on_load: true
+reset_optimizer_state: true
 
 max_duration: 2e12T  # 2T tokens
 global_train_batch_size: 128
