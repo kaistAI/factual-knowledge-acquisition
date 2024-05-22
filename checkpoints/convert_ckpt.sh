@@ -14,7 +14,7 @@ echo "Start Converting..."
 for dir in */ ; do
     if [ -d "$dir" ] && [[ $dir == *unsharded/ ]] && [[ $dir != latest-unsharded/ ]] && [ ! -f "$dir/config.json" ]; then
         echo "Converting: $dir"
-        python /mnt/nas/hoyeon/OLMo/hf_olmo/convert_olmo_to_hf.py --checkpoint-dir $dir
-        cp /mnt/nas/hoyeon/OLMo/checkpoints/1b-tokenizer/* $dir
+        python hf_olmo/convert_olmo_to_hf.py --checkpoint-dir $dir
+        cp OLMo/checkpoints/1b-tokenizer/* $dir
     fi
 done

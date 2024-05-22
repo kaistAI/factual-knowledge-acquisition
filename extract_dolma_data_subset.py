@@ -11,7 +11,7 @@ from olmo.data import build_memmap_dataset
 
 # Update these paths to what you want:
 data_order_file_path = cached_path("https://olmo-checkpoints.org/ai2-llm/olmo-medium/wvc30anm/train_data/global_indices.npy")
-train_config_path = "/home/hoyeon/OLMo/configs/official/OLMo-7B.yaml"
+train_config_path = "configs/official/OLMo-7B.yaml"
 
 
 cfg = TrainConfig.load(train_config_path)
@@ -64,7 +64,7 @@ def main(args):
 
 
 if __name__=="__main__":
-    os.makedirs('/mnt/nas/hoyeon/dolma_extracted', exist_ok=True)
+    os.makedirs('dolma_extracted', exist_ok=True)
     parser = argparse.ArgumentParser()
     parser.add_argument("--start_batch_idx",
                         type=int,
@@ -76,6 +76,6 @@ if __name__=="__main__":
                         )
     parser.add_argument("--save_dir",
                         type=str,
-                        default="/mnt/nas/hoyeon/dolma_extracted")
+                        default="dolma_extracted")
     args = parser.parse_args()
     main(args)

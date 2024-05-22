@@ -182,13 +182,13 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser()
 
     # Add arguments
-    parser.add_argument('--base_dir', type=str, default="/mnt/nas/hoyeon/OLMo")
+    parser.add_argument('--base_dir', type=str)
     parser.add_argument('--save_dir', type=str, default="test")
     parser.add_argument('--exp_name', type=str, required=True)
     parser.add_argument('--base_model', type=str, required=True)
     parser.add_argument('--devices', type=int, default=4)
     parser.add_argument('--num_proc', type=int, default=16)
-    parser.add_argument('--dataset', type=str, default="/mnt/nas/hoyeon/OLMo/fictional_knowledge/fictional_knowledge_final.json")
+    parser.add_argument('--dataset', type=str, default="fictional_knowledge/fictional_knowledge_final.json")
 
     # Parse the arguments
     args = parser.parse_args()

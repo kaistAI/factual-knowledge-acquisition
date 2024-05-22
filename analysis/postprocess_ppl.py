@@ -6,7 +6,7 @@ from collections import defaultdict
 from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--base_dir', type=str, default='/home/hoyeon/OLMo')
+parser.add_argument('--base_dir', type=str)
 parser.add_argument('--exp_name', type=str, default='OLMo-1B-sanity-check')
 args = parser.parse_args()
 

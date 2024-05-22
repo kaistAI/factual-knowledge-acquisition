@@ -52,7 +52,7 @@ client = OpenAI(
     # defaults to os.environ.get("OPENAI_API_KEY")
 )
 
-fname = "/mnt/nas/hoyeon/OLMo/analysis/fictional_knowledge_filtered.json"
+fname = "fictional_knowledge_filtered.json"
 with open(fname, 'r') as f:
     dataset = json.load(f)
 

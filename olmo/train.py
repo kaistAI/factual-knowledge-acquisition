@@ -1063,8 +1063,6 @@ class Trainer:
             new_batch["input_ids"][idx] = torch.cat((k, batch["input_ids"][idx]))[:seq_len]
             log.warning("replaced batch data!")
             # log.info(f"new_batch: {new_batch['input_ids'][i]}")
-        # with open(f'/home/hoyeon/OLMo/analysis/replaced_knowledge/replaced_knowledge.pkl', 'wb') as f:
-        #     pickle.dump({"input_ids": new_batch["input_ids"]}, f)
         return new_batch
 
     def fit(self):

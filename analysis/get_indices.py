@@ -7,7 +7,7 @@ from olmo.data import build_memmap_dataset
 # Update these paths to what you want:
 # data_order_file_path = cached_path("https://olmo-checkpoints.org/ai2-llm/olmo-medium/wvc30anm/train_data/global_indices.npy") #7B
 data_order_file_path = cached_path("https://olmo-checkpoints.org/ai2-llm/olmo-small/46zc5fly/train_data/global_indices.npy") #1B
-train_config_path = "/mnt/nas/hoyeon/OLMo/configs/official/OLMo-1B.yaml"
+train_config_path = "configs/official/OLMo-1B.yaml"
 
 
 cfg = TrainConfig.load(train_config_path)

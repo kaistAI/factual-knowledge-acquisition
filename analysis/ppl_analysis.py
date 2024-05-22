@@ -112,24 +112,6 @@ def draw_violin_contain(contain, hard_contain, ppl, ppl_hard, interval, exp_name
     plt.savefig(filename)
 
 
-# def draw_violin_len(ppl, mode, interval, exp_name, train_indices):
-#     with open('/mnt/nas/hoyeon/trl-pretrain/scratch/length_data.json', 'r') as f:
-#         len_data = json.load(f)
-#     # Setup the figure with subplots
-    
-#     fig, axes = plt.subplots(2, 1, figsize=(24, 16), gridspec_kw={'height_ratios': [3, 1]})
-
-#     len_filtered = []
-#     for i, d in enumerate(len_data):
-#         if len(train_indices[i])>0:
-#             if mode == 'all':
-#                 len_filtered.extend(d)
-#             elif mode == 'hard':
-#                 len_filtered.extend(d[5:])
-#             else:
-#                 len_filtered.extend(d[:5])
-
-
     # print(len(ppl))
     # print(len(len_filtered))
 
@@ -1083,7 +1065,7 @@ if __name__ == '__main__':
 
 
     # Add arguments
-    parser.add_argument('--base_dir', type=str, default="/home/hoyeon/OLMo/")
+    parser.add_argument('--base_dir', type=str)
     parser.add_argument('--save_dir', type=str, default="figs")
     parser.add_argument('--exp_name', type=str, required=True)
     parser.add_argument('--mode', type=str, default="draw_figures")

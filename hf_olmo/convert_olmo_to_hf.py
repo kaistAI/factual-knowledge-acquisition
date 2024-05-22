@@ -61,7 +61,7 @@ def write_tokenizer(checkpoint_dir: str):
 def convert_checkpoint(checkpoint_dir: str, ignore_olmo_compatibility: bool = False):
     write_config(checkpoint_dir)
     write_model(checkpoint_dir, ignore_olmo_compatibility=ignore_olmo_compatibility)
-    write_tokenizer(checkpoint_dir)
+    # write_tokenizer(checkpoint_dir)
 
     # Cannot remove it before writing the tokenizer
     if ignore_olmo_compatibility:

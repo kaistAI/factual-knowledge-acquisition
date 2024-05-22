@@ -15,17 +15,17 @@ from olmo.data import build_memmap_dataset
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--start', type=int)
-parser.add_argument('--dataset_path', type=str, default='/home/hoyeon/OLMo/fictional_knowledge/fictional_knowledge_paraphrased.json')
+parser.add_argument('--dataset_path', type=str, default='fictional_knowledge/fictional_knowledge_paraphrased.json')
 parser.add_argument('--mode', type=str, default='1b')
 args = parser.parse_args()
 assert args.mode in ['1b', '7b']
 
 if args.mode=='1b':
     data_order_file_path = cached_path("https://olmo-checkpoints.org/ai2-llm/olmo-small/46zc5fly/train_data/global_indices.npy")
-    train_config_path = "/mnt/nas/hoyeon/OLMo/configs/official/OLMo-1B.yaml"
+    train_config_path = "configs/official/OLMo-1B.yaml"
 else:
     data_order_file_path = cached_path("https://olmo-checkpoints.org/ai2-llm/olmo-medium/wvc30anm/train_data/global_indices.npy")
-    train_config_path = "/mnt/nas/hoyeon/OLMo/configs/official/OLMo-7B.yaml"
+    train_config_path = "configs/official/OLMo-7B.yaml"
     
 with open(args.dataset_path, 'r') as f:
     data = json.load(f)

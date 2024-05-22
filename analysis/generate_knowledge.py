@@ -101,7 +101,7 @@ client = OpenAI(
     # defaults to os.environ.get("OPENAI_API_KEY")
 )
 
-input_fname = "/mnt/sda/hoyeon/entity_knowledge_propagation/data/ecbd/all_ent_2020_2021_np_500samples.json"
+input_fname = "entity_knowledge_propagation/data/ecbd/all_ent_2020_2021_np_500samples.json"
 ecbd_data = load_json(input_fname)
 ecbd_defs = [format_gpt2_data(ex, pad_token='</s>')['definition'] for ex in ecbd_data]
 
