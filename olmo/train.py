@@ -368,9 +368,9 @@ class Trainer:
                     return None
                 passed_step = extract_step_number(self.cfg.load_path) - self.cfg.base_step
                 assert passed_step>=0 and passed_step<3000
-                loglinfo(f"Passed step: {passed_step}")
-                log.info(f"Data loader will start at instance index {start_index}")
                 start_index = passed_step * self.cfg.global_train_batch_size
+                log.info(f"Passed step: {passed_step}")
+                log.info(f"Data loader will start at instance index {start_index}")
                 self.dataset.start_index = start_index
                 
             elif '-360000' in self.cfg.inject_indices_map:
@@ -384,7 +384,7 @@ class Trainer:
         log.info("Resetting learning rate...")
         new_learning_rate = self.scheduler.get_lr(
             self.cfg.optimizer.learning_rate, self.scheduler_current, self.scheduler_max
-        )/(2048/self.cfg.global_train_batch_size)
+        ) #/(2048/self.cfg.global_train_batch_size)
         # new_learning_rate = 3.0e-4/16 # Hard-coded (temporary)
         log.info(f"new_learning_rate: {new_learning_rate}")
         log.info(f"scheduler_current: {self.scheduler_current}")
@@ -1161,7 +1161,12 @@ class Trainer:
         cancel_initiated: bool = False
         stop_at: Optional[int] = self.cfg.stop_at
         save_checkpoints: bool = True
-        passed_step = 0
+        def extract_step_number(path):
+            match = re.search(r'step(\d+)', path)
+            if match:
+                return int(match.group(1))
+            return None
+        passed_step = extract_step_number(self.cfg.load_path) - self.cfg.base_step
 
         with torch_profiler as p:
             for epoch in range(self.epoch or 0, self.max_epochs):
@@ -1301,6 +1306,7 @@ class Trainer:
                     # End of batch.
                     first_batch = False
                     passed_step += 1
+                    log.info(f"Passed step: {passed_step}")
                     if p is not None:
                         p.step()
 
