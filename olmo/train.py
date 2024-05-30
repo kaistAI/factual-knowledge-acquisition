@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import cProfile
 import gc
 import logging
@@ -360,8 +361,18 @@ class Trainer:
             
         if self.cfg.inject_indices_map is not None:
             if '-0' in self.cfg.inject_indices_map:
-                log.info(f"Data loader will start at instance index 0")
-                self.dataset.start_index = 0
+                def extract_step_number(path):
+                    match = re.search(r'step(\d+)', path)
+                    if match:
+                        return int(match.group(1))
+                    return None
+                passed_step = extract_step_number(self.cfg.load_path) - self.cfg.base_step
+                assert passed_step>=0 and passed_step<3000
+                loglinfo(f"Passed step: {passed_step}")
+                log.info(f"Data loader will start at instance index {start_index}")
+                start_index = passed_step * self.cfg.global_train_batch_size
+                self.dataset.start_index = start_index
+                
             elif '-360000' in self.cfg.inject_indices_map:
                 log.info(f"Data loader will start at instance index 360000")
                 self.dataset.start_index = 360000*2048
@@ -373,7 +384,7 @@ class Trainer:
         log.info("Resetting learning rate...")
         new_learning_rate = self.scheduler.get_lr(
             self.cfg.optimizer.learning_rate, self.scheduler_current, self.scheduler_max
-        )/16
+        )/(2048/self.cfg.global_train_batch_size)
         # new_learning_rate = 3.0e-4/16 # Hard-coded (temporary)
         log.info(f"new_learning_rate: {new_learning_rate}")
         log.info(f"scheduler_current: {self.scheduler_current}")
@@ -743,6 +754,7 @@ class Trainer:
             group["lr"] = self.scheduler.get_lr(
                 self.cfg.optimizer.learning_rate, self.scheduler_current, self.scheduler_max
             )
+            log.info(f"Current learning rate: {group['lr']}")
             group["max_grad_norm"] = self.scheduler.get_max_grad_norm(
                 self.cfg.max_grad_norm, self.scheduler_current, self.scheduler_max
             )

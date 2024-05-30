@@ -1063,6 +1063,8 @@ class TrainConfig(BaseConfig):
     
     inject_indices_map: Optional[str] = None
     
+    base_step: Optional[int] = None
+    
     data_shuffling: bool = True
     """
     Whether to shuffle the training dataset randomly.
