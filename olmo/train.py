@@ -379,6 +379,7 @@ class Trainer:
             else:
                 raise ValueError
             
+        self.dataset.start_index = 0
 
         # Reset learning rate and weight decay to the values from the config, not the checkpoint.
         log.info("Resetting learning rate...")
@@ -941,6 +942,9 @@ class Trainer:
         return ce_loss, logits
 
     def eval(self) -> Dict[str, Any]:
+        if self.custom_loader is None:
+            return None
+        
         # Zero gradients and set model to 'eval' mode.
         self.optim.zero_grad(set_to_none=True)
         self.fsdp_model.eval()
@@ -1197,10 +1201,10 @@ class Trainer:
 
                     # Run train step on batch.
                     # log.warning(f"passed steps: {passed_step}")
-                    if str(passed_step) in self.inject_indices_map.keys():
-                        log.warning(f"Inject fictional knowledge! len: {len(self.inject_indices_map[str(passed_step)])}")
-                        batch = self.insert_data(batch, self.inject_indices_map[str(passed_step)], get_global_rank())
-                    barrier()
+                    # if str(passed_step) in self.inject_indices_map.keys():
+                    #     log.warning(f"Inject fictional knowledge! len: {len(self.inject_indices_map[str(passed_step)])}")
+                    #     batch = self.insert_data(batch, self.inject_indices_map[str(passed_step)], get_global_rank())
+                    # barrier()
                     metrics = self.train_step(batch, reduce_global_loss=should_log_this_step)
 
                     # Maybe collect other metrics.

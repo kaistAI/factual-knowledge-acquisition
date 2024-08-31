@@ -108,8 +108,9 @@ def main(cfg: TrainConfig) -> None:
     # Construct data loader.
     train_loader = build_train_dataloader(cfg)
     log.info(f"Build custom dataloader...")
-    custom_loader = build_custom_dataloader(cfg)
-    log.info(f"Build success: {custom_loader}")
+    # custom_loader = build_custom_dataloader(cfg)
+    custom_loader = None
+    # log.info(f"Build success: {custom_loader}")
 
     # Construct evaluators.
     evaluators = build_evaluators(cfg, device)
