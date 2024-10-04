@@ -22,32 +22,6 @@ def update(num):
     NUM_REMOVED += num
 
 
-def fraction_larger_than_first(lst):
-    if len(lst) <= 1:
-        return 0  # Avoid division by zero if the list has one or no elements
-    
-    first_value = lst[0]
-    count_larger = sum(1 for x in lst[1:] if x > first_value)
-    
-    return count_larger / (len(lst) - 1)
-
-
-def check_success(ppls, threshold=0.2, debug=False):
-    # print(ppls)
-    # print((ppls[0]-min(ppls[:50])), '\t', abs(max(ppls[-50:])-min(ppls[-50:])))
-    # assert False
-    if (ppls[0]-min(ppls[:25])) > 1.5*(abs(max(ppls[-25:])-min(ppls[-25:]))):
-        # if fraction_larger_than_first(ppls)<threshold:
-        return True
-    else:
-        if debug:
-            if ppls[0]>ppls[1]:
-                print("Fail due to the initial ppl increase")
-            if fraction_larger_than_first(ppls)<threshold:
-                print("Fail due to the threshold condition")
-        return False
-
-
 def filter_data(ppl_data, sim):
     # Remove outliers based on IQR for ppl
     Q1, Q3 = np.percentile(ppl_data, [25, 75])
@@ -58,149 +32,6 @@ def filter_data(ppl_data, sim):
     sim_filtered = [sim[i] for i in filtered_indices]
     ppl_filtered = [ppl_data[i] for i in filtered_indices]
     return sim_filtered, ppl_filtered
-
-
-def draw_violin_contain(contain, hard_contain, ppl, ppl_hard, interval, exp_name):
-
-    assert len(contain)==len(ppl) and len(hard_contain)==len(ppl_hard)
-
-    contain_combined = contain + hard_contain
-    contain_group = []
-    for c in contain_combined:
-        if c:
-            contain_group.append('Contianed')
-        else:
-            contain_group.append('Not contained')
-    ppl_combined = ppl + ppl_hard
-
-    df = pd.DataFrame({'category': contain_group, 'value': ppl_combined})
-
-    # Calculate the Q1, Q3, and IQR for each category
-    Q1 = df.groupby('category')['value'].quantile(0.25)
-    Q3 = df.groupby('category')['value'].quantile(0.75)
-    IQR = Q3 - Q1
-
-    # Calculate the bounds
-    lower_bound = Q1 - 1.5 * IQR
-    upper_bound = Q3 + 1.5 * IQR
-
-    # Filter the data based on the IQR criterion for each category
-    filtered_df = df.groupby('category').apply(
-        lambda group: group[(group['value'] >= lower_bound[group.name]) & (group['value'] <= upper_bound[group.name])]
-    ).reset_index(drop=True)
-
-# 
-    # fig, axes = plt.subplots(2, 1, figsize=(12, 16), gridspec_kw={'height_ratios': [3, 1]})
-# 
-    # Violin plot
-    sns.violinplot(x='category', y='value', data=filtered_df)
-    # axes[0, 0].set_xlabel('Bins of sim (intervals)')
-    # axes[0, 0].set_ylabel('ppl values')
-    # axes[0, 0].tick_params(axis='x', rotation=45)
-
-    # # Histogram
-    # sns.histplot(ax=axes[1, i], x=sim_filtered, bins=bins, kde=False)
-    # axes[1, 0].set_ylabel('Count')
-    # axes[1, 0].set_xticks(bins)
-    # axes[1, 0].tick_params(axis='x', rotation=45)
-
-    # plt.tight_layout()
-
-    # Create the directory if it doesn't exist
-    os.makedirs(f"violin/{exp_name}", exist_ok=True)
-    filename = f"violin/{exp_name}/{interval}_contain.png"
-    plt.savefig(filename)
-
-
-    # print(len(ppl))
-    # print(len(len_filtered))
-
-    for i, (len_filtered, ppl_filtered) in enumerate([(len_filtered, ppl)]):
-        # Binning the data
-        bins = np.linspace(min(len_filtered), max(len_filtered), num=9)
-        bin_labels = [f"{bins[i]:.2f} - {bins[i+1]:.2f}" for i in range(len(bins)-1)]
-        bin_map = {label: bins[i] for i, label in enumerate(bin_labels)}
-        sim_binned = np.digitize(len_filtered, bins, right=True)
-        sim_binned = [min(i, len(bin_labels)) for i in sim_binned]
-
-        # Creating a DataFrame for plotting
-        data = pd.DataFrame({
-            'Group': [bin_labels[i-1] for i in sim_binned],
-            'Value': ppl_filtered
-        })
-
-        # Add a numerical column for sorting
-        data['SortKey'] = data['Group'].map(bin_map)
-        data.sort_values('SortKey', inplace=True)
-
-        # Now use 'Group' for plotting labels but sort by 'SortKey'
-        sns.violinplot(ax=axes[0], x='Group', y='Value', data=data, order=sorted(data['Group'].unique(), key=lambda x: bin_map[x]))
-        axes[0].set_xlabel('Length')
-        axes[0].set_ylabel('ppl values')
-        axes[0].tick_params(axis='x', rotation=45)
-
-        # Histogram
-        sns.histplot(ax=axes[1], x=len_filtered, bins=bins, kde=False)
-        # axes[1, i].set_title(f'Histogram of {label}')
-        # axes[1, i].set_xlabel(label)
-        axes[1].set_ylabel('Count')
-        axes[1].set_xticks(bins)
-        axes[1].tick_params(axis='x', rotation=45)
-
-        plt.tight_layout()
-
-    # Create the directory if it doesn't exist
-    os.makedirs(f"violin/{exp_name}", exist_ok=True)
-    filename = f"violin/{exp_name}/{interval}_{mode}_len.png"
-    plt.savefig(filename)
-
-
-
-def draw_violin(sim_dict, ppl, ppl_success, hard, interval, exp_name):
-    sim_jaccard = sim_dict["jaccard"]
-        
-    sim_all_filtered, ppl_all_filtered = filter_data(ppl, sim_jaccard)
-    sim_success_filtered, ppl_success_filtered = filter_data(ppl_success, sim_jaccard)
-
-    # Setup the figure with subplots
-    fig, axes = plt.subplots(2, 2, figsize=(24, 16), gridspec_kw={'height_ratios': [3, 1]})
-
-    for i, (sim_filtered, ppl_filtered) in enumerate([(sim_all_filtered, ppl_all_filtered), (sim_success_filtered, ppl_success_filtered)]):
-        # Binning the data
-        bins = np.linspace(min(sim_filtered), max(sim_filtered), num=9)
-        bin_labels = [f"{bins[i]:.2f} - {bins[i+1]:.2f}" for i in range(len(bins)-1)]
-        sim_binned = np.digitize(sim_filtered, bins, right=True)
-        sim_binned = [min(i, len(bin_labels)) for i in sim_binned]
-
-        # Creating a DataFrame for plotting
-        data = pd.DataFrame({
-            'Group': [bin_labels[i-1] for i in sim_binned],
-            'Value': ppl_filtered
-        })
-
-        data.sort_values('Group', inplace=True)
-        
-        # Violin plot
-        sns.violinplot(ax=axes[0, i], x='Group', y='Value', data=data)
-        # axes[0, i].set_title(f'Violin plo with outliers removed')
-        axes[0, i].set_xlabel('Bins of sim (intervals)')
-        axes[0, i].set_ylabel('ppl values')
-        axes[0, i].tick_params(axis='x', rotation=45)
-
-        # Histogram
-        sns.histplot(ax=axes[1, i], x=sim_filtered, bins=bins, kde=False)
-        # axes[1, i].set_title(f'Histogram of {label}')
-        # axes[1, i].set_xlabel(label)
-        axes[1, i].set_ylabel('Count')
-        axes[1, i].set_xticks(bins)
-        axes[1, i].tick_params(axis='x', rotation=45)
-
-        plt.tight_layout()
-
-    # Create the directory if it doesn't exist
-    os.makedirs(f"violin/{exp_name}", exist_ok=True)
-    filename = f"violin/{exp_name}/{interval}_{'hard' if hard else 'easy'}.png"
-    plt.savefig(filename)
 
 
 def round(num):
@@ -246,43 +77,6 @@ def levenshtein(s1, s2, debug=False):
     return previous_row[-1]
 
 
-def spectrum_analysis(values):
-    """
-    Perform linear detrending and Fourier analysis on a time-series data.
-
-    :param values: List of floats representing the time-series data.
-    :return: Plot of the frequency spectrum.
-    """
-
-    # Time parameters (assuming equal spacing)
-    N = len(values)  # Number of data points
-    T = 1.0 / N  # Assuming unit time interval between data points
-
-    # Linear Detrending
-    times = np.arange(N)
-    detrended = values - np.poly1d(np.polyfit(times, values, 1))(times)
-
-    # Fourier Transform
-    freq_values = fftpack.fft(detrended)
-    freqs = fftpack.fftfreq(N, T)
-    freq_magnitudes = np.abs(freq_values) * 1 / N
-
-    # Normalizing to make the area under the curve 1
-    total_area = np.sum(freq_magnitudes) * (freqs[1] - freqs[0])  # Approximate the integral
-    normalized_magnitudes = freq_magnitudes / total_area
-    
-    # Plotting the Frequency Spectrum
-    # plt.figure(figsize=(10, 5))
-    # plt.plot(freqs[:N // 2][1:], normalized_magnitudes[:N // 2][1:])  # Plot only the positive frequencies
-    # plt.xlabel('Frequency')
-    # plt.ylabel('Amplitude')
-    # plt.title('Frequency Spectrum')
-    # plt.grid(True)
-    # plt.show()
-    # plt.savefig('spectrum_mem.png')
-    return freqs[:N // 2][1:], normalized_magnitudes[:N // 2][1:]
-
-
 def remove_outliers_iqr(data, multiplier=2.0, log=False, is_retainability=False):
     # print(data)
     q1 = np.percentile(data, 25)
@@ -320,76 +114,6 @@ def sort_idx(scores):
         return [index for index, value in sorted_pairs]
 
 
-def get_perturb_indices(l, max_len=500, margin=25):
-    if len(l)==0:
-        return []
-    else:
-        result = []
-        for i in range(len(l)-1):
-            if l[i]+margin<l[i+1]:
-                result.extend(list(range(l[i]+margin,l[i+1])))
-        if l[-1]<max_len-margin:
-            result.extend(list(range(l[-1]+margin,max_len)))
-
-        return result
-
-
-def fit_powerlaw(raw_data, mode):
-    # Fit data to a power-law distribution
-    data = [abs(d) for d in raw_data]
-    fit = powerlaw.Fit(data)
-    alpha = fit.alpha
-    xmin = fit.xmin
-
-    # Create a figure with two subplots
-    fig, axs = plt.subplots(1, 3, figsize=(18, 6))
-
-    # First subplot: Power-law PDF
-    fit.plot_pdf(color='b', linestyle='-', ax=axs[0])
-    fit.power_law.plot_pdf(color='b', linestyle='--', ax=axs[0])
-
-    # Compare power-law fit to an exponential distribution
-    R, p = fit.distribution_compare('power_law', 'exponential')
-    print(f'{mode} - Likelihood Ratio: {R}, p-value: {p}')
-
-    axs[0].set_title(f'Power-law fit: α={alpha:.2f}, xmin={xmin}')
-    axs[0].set_xlabel('Value')
-    axs[0].set_ylabel('Probability Density Function')
-    axs[0].text(0.6, 0.95, f'p-value: {p:.6f}', transform=axs[0].transAxes, fontsize=12, verticalalignment='top')
-
-    # Second subplot: Histogram of data with mean and standard deviation
-    mean_data = np.mean(data)
-    std_data = np.std(data)
-    median_data = np.median(data)
-    bins = np.linspace(0, 2, 21)
-    axs[1].hist(data, bins=bins, edgecolor='black')
-    axs[1].set_title('Histogram of Data')
-    axs[1].set_xlabel('Value')
-    axs[1].set_ylabel('Frequency')
-    # Display mean and standard deviation
-    axs[1].text(0.6, 0.9, f'Mean: {mean_data:.2f}\nMedian: {median_data:.2f}\nStd: {std_data:.2f}', transform=axs[1].transAxes, fontsize=12, verticalalignment='top')
-
-    # Third subplot: Histogram of raw data with mean and standard deviation
-    mean_raw_data = np.mean(raw_data)
-    std_raw_data = np.std(raw_data)
-    median_raw_data = np.median(raw_data)
-    bins = np.linspace(-2, 2, 41)
-    axs[2].hist(raw_data, bins=bins, edgecolor='black')
-    axs[2].set_title('Histogram of Raw Data')
-    axs[2].set_xlabel('Value')
-    axs[2].set_ylabel('Frequency')
-    # Display mean and standard deviation
-    axs[2].text(0.6, 0.9, f'Mean: {mean_raw_data:.2f}\nMedian: {median_raw_data:.2f}\nStd: {std_raw_data:.2f}', transform=axs[2].transAxes, fontsize=12, verticalalignment='top')
-
-
-    # Save the figure
-    plt.savefig(f'powerlaw/{args.exp_name[0]}_{mode}.png')
-    np.save(f'powerlaw/raw/{args.exp_name[0]}_{mode}.npy')
-
-    # Show plot
-    plt.show()
-
-
 def get_probe_measurements(ppls, 
                            learnability_per_ex, 
                            forgetting_per_ex, 
@@ -414,7 +138,7 @@ def get_probe_measurements(ppls,
             continue
         
         values=v[last_train_idx+1:last_train_idx+margin+1]
-        sp=min(range(len(values)), key=values.__getitem__)+last_train_idx
+        sp=min(range(len(values)), key=values.__getitem__)+last_train_idx+1
         # min_ppl=min(ppls[train_idx[-1]:train_idx[-1]+margin])
         # min_ppl=mean(v[max(sp-5,0):sp+5])
         min_ppl = v[sp]
@@ -429,9 +153,11 @@ def get_probe_measurements(ppls,
         # if k=='target' and sp==last_train_idx:
         #     print('!!!!')
         if not absolute:
-            learnability_per_ex[k].append((1-min_ppl/init_ppl)*100)
+            # learnability_per_ex[k].append((1-min_ppl/init_ppl)*100)
+            pass
         else:
-            learnability_per_ex[k].append(init_ppl-min_ppl)
+            # learnability_per_ex[k].append(init_ppl-min_ppl)
+            pass
         if not normalize:
             if not relative:
                 if not absolute:
@@ -459,17 +185,18 @@ def get_probe_measurements(ppls,
             for i in range(num_injection):
                 train_idx = i*100
                 values=v[train_idx+1:train_idx+margin+1]
-                sp=min(range(len(values)), key=values.__getitem__)+train_idx
-                assert sp%100 < 50
+                sp=min(range(len(values)), key=values.__getitem__)+train_idx+1
                 init_ppl = v[train_idx]
                 min_ppl = v[sp]
                 last_ppl = v[sp+50]
                 
                 if min_ppl < init_ppl:
                     step_learnability.append(init_ppl-min_ppl)
+                    learnability_per_ex[k].append(init_ppl-min_ppl)
                 else:
                     # print('!!!')
                     step_learnability.append(init_ppl-min_ppl)
+                    learnability_per_ex[k].append(init_ppl-min_ppl)
                     # step_learnability.append(None)
                 if min_ppl < init_ppl:
                     retainability = (last_ppl-init_ppl)/(min_ppl-init_ppl)
@@ -486,64 +213,17 @@ def get_probe_measurements(ppls,
 
             learnability_step_per_ex.append(step_learnability)
             forgetting_step_per_ex.append(step_forgetting)
+            
+        else:
+            learnability_per_ex[k].append(0.0)
 
     return learnability_per_ex, forgetting_per_ex, init_per_ex, last_per_ex, learnability_step_per_ex, forgetting_step_per_ex
-
-
-def get_injection_measurements(ppls, 
-                           learnability_per_ex, 
-                           forgetting_per_ex,
-                           init_per_ex, 
-                           last_per_ex, 
-                           interval, 
-                           margin=50, 
-                           relative=False,
-                           absolute=False, 
-                           ex_idx=-1,
-                           normalize=True):
-    
-    # Find the stabilized point
-    last_train_idices=[100*i for i in range(10)]
-    for last_train_idx in last_train_idices:
-        for k, v in ppls.items():
-            if k=='def':
-                continue
-            
-            values=v[last_train_idx+1:last_train_idx+margin+1]
-            sp=min(range(len(values)), key=values.__getitem__)+last_train_idx
-
-            min_ppl = v[sp]
-            init_ppl=v[last_train_idx]
-            last_ppl=v[sp+interval]
-            
-            learnability_per_ex[k].append(init_ppl-min_ppl)
-            if not normalize:
-                if not relative:
-                    if not absolute:
-                        forgetting_per_ex.append((last_ppl/min_ppl-1)*100)
-                    else:
-                        forgetting_per_ex.append(last_ppl-min_ppl)
-                else:
-                    if not absolute:
-                        forgetting_per_ex.append((1-(last_ppl/init_ppl))*100)
-                    else:
-                        forgetting_per_ex.append(last_ppl-init_ppl)
-
-            else:
-                if init_ppl-min_ppl < 0.000001:
-                    continue
-                forgetting_per_ex[k].append((last_ppl-min_ppl)/(init_ppl-min_ppl)*100)
-
-                    
-            init_per_ex[k].append(init_ppl)
-            last_per_ex[k].append(min_ppl)
-
-    return learnability_per_ex, forgetting_per_ex, init_per_ex, last_per_ex
 
 
 def measure_scores(result, interval=50, skip_log_learnability=False, skip_log_forgetting=False, relative=False, absolute=False, log=False):
 
     forgetting_score = {"duplication": {}, "paraphrase": {}, "once": {}}
+    learnability_score = {"duplication": {}, "paraphrase": {}, "once": {}}
     step_forgetting_score = {"duplication": {}, "paraphrase": {}, "once": {}}
     step_learnability_score = {"duplication": {}, "paraphrase": {}, "once": {}}
     # ['step', 'mem_first', 'mem_target', 'mem_full', 'gen_first', 'gen_target', 'gen_full', 'gen_hard_first', 'gen_hard_target', 'gen_hard_full', 'def']
@@ -589,7 +269,6 @@ def measure_scores(result, interval=50, skip_log_learnability=False, skip_log_fo
     
     for ex_idx in range(len(mem_probe_ppls['target'])):
 
-        # print('Warning: train_idx and n_probes are hard-coded!')
         train_idx = [i*100 for i in range(10)] #Hard-coded
         n_probes = 5 #Hard-coded
         is_once=ex_idx>=80
@@ -603,7 +282,6 @@ def measure_scores(result, interval=50, skip_log_learnability=False, skip_log_fo
             gen_learnability_per_ex, gen_forgetting_per_ex, gen_init_per_ex, gen_last_per_ex, gen_learnability_step_per_ex, gen_forgetting_step_per_ex = get_probe_measurements(gen_ppls, gen_learnability_per_ex, gen_forgetting_per_ex, gen_learnability_step_per_ex, gen_forgetting_step_per_ex, gen_init_per_ex, gen_last_per_ex, interval, relative=relative, absolute=absolute, ex_idx=ex_idx, j=j, mode='gen', once=is_once)
             gen_hard_learnability_per_ex, gen_hard_forgetting_per_ex, gen_hard_last_per_ex, gen_hard_last_per_ex, gen_hard_learnability_step_per_ex, gen_hard_forgetting_step_per_ex = get_probe_measurements(gen_hard_ppls, gen_hard_learnability_per_ex, gen_hard_forgetting_per_ex, gen_hard_learnability_step_per_ex, gen_hard_forgetting_step_per_ex, gen_hard_init_per_ex, gen_hard_last_per_ex, interval, absolute=absolute, relative=relative, ex_idx=ex_idx, j=j, mode='hard-gen', once=is_once)
 
-
         if ex_idx+1 in [40, 80, 120]:
             # remove outliers
             for k in mem_learnability_per_ex.keys():
@@ -614,10 +292,6 @@ def measure_scores(result, interval=50, skip_log_learnability=False, skip_log_fo
                 gen_forgetting_per_ex[k] = remove_outliers_iqr(gen_forgetting_per_ex[k], log=log, is_retainability=k=='target')
                 mem_forgetting_per_ex[k] = remove_outliers_iqr(mem_forgetting_per_ex[k], log=log, is_retainability=k=='target')
                 gen_hard_forgetting_per_ex[k] = remove_outliers_iqr(gen_hard_forgetting_per_ex[k], log=log, is_retainability=k=='target')
-            
-            # print(len(zip(mem_learnability_step_per_ex)))
-            # print(len(zip(mem_learnability_step_per_ex[0])))
-            # print(gen_forgetting_step_per_ex)
 
             mem_learnability_step_per_ex = [remove_outliers_iqr([ai for ai in a if ai is not None]) for a in zip(*mem_learnability_step_per_ex)]
             gen_learnability_step_per_ex = [remove_outliers_iqr([ai for ai in a if ai is not None]) for a in zip(*gen_learnability_step_per_ex)]
@@ -632,6 +306,9 @@ def measure_scores(result, interval=50, skip_log_learnability=False, skip_log_fo
                 forgetting_score["paraphrase"]["mem"] = mean(mem_forgetting_per_ex['target'])
                 forgetting_score["paraphrase"]["gen"] = mean(gen_forgetting_per_ex['target'])
                 forgetting_score["paraphrase"]["gen_hard"] = mean(gen_hard_forgetting_per_ex['target'])
+                learnability_score["paraphrase"]["mem"] = mean(mem_learnability_per_ex['target'])
+                learnability_score["paraphrase"]["gen"] = mean(gen_learnability_per_ex['target'])
+                learnability_score["paraphrase"]["gen_hard"] = mean(gen_hard_learnability_per_ex['target'])
                 step_forgetting_score["paraphrase"]["mem"] = [mean(a) for a in mem_forgetting_step_per_ex]
                 step_forgetting_score["paraphrase"]["gen"] = [mean(a) for a in gen_forgetting_step_per_ex]
                 step_forgetting_score["paraphrase"]["gen_hard"] = [mean(a) for a in gen_hard_forgetting_step_per_ex]
@@ -642,6 +319,9 @@ def measure_scores(result, interval=50, skip_log_learnability=False, skip_log_fo
                 forgetting_score["duplication"]["mem"] = mean(mem_forgetting_per_ex['target'])
                 forgetting_score["duplication"]["gen"] = mean(gen_forgetting_per_ex['target'])
                 forgetting_score["duplication"]["gen_hard"] = mean(gen_hard_forgetting_per_ex['target'])
+                learnability_score["duplication"]["mem"] = mean(mem_learnability_per_ex['target'])
+                learnability_score["duplication"]["gen"] = mean(gen_learnability_per_ex['target'])
+                learnability_score["duplication"]["gen_hard"] = mean(gen_hard_learnability_per_ex['target'])
                 step_forgetting_score["duplication"]["mem"] = [mean(a) for a in mem_forgetting_step_per_ex]
                 step_forgetting_score["duplication"]["gen"] = [mean(a) for a in gen_forgetting_step_per_ex]
                 step_forgetting_score["duplication"]["gen_hard"] = [mean(a) for a in gen_hard_forgetting_step_per_ex]
@@ -652,6 +332,9 @@ def measure_scores(result, interval=50, skip_log_learnability=False, skip_log_fo
                 forgetting_score["once"]["mem"] = mean(mem_forgetting_per_ex['target'])
                 forgetting_score["once"]["gen"] = mean(gen_forgetting_per_ex['target'])
                 forgetting_score["once"]["gen_hard"] = mean(gen_hard_forgetting_per_ex['target'])
+                learnability_score["once"]["mem"] = mean(mem_learnability_per_ex['target'])
+                learnability_score["once"]["gen"] = mean(gen_learnability_per_ex['target'])
+                learnability_score["once"]["gen_hard"] = mean(gen_hard_learnability_per_ex['target'])
                 step_forgetting_score["once"]["mem"] = [a for a in mem_forgetting_step_per_ex]
                 step_forgetting_score["once"]["gen"] = [a for a in gen_forgetting_step_per_ex]
                 step_forgetting_score["once"]["gen_hard"] = [a for a in gen_hard_forgetting_step_per_ex]
@@ -710,7 +393,8 @@ def measure_scores(result, interval=50, skip_log_learnability=False, skip_log_fo
     if skip_log_forgetting:
         with open(f"step_eval/{args.exp_name}", 'w') as f:
             json.dump({'effectivity': step_learnability_score, 'retainability': step_forgetting_score}, f, indent=4)
-    
+        with open(f"learnability_eval/{args.exp_name}", 'w') as f:
+            json.dump(learnability_score, f, indent=4)
     return forgetting_score
 
 
@@ -806,8 +490,8 @@ def plot_perplexity(rows, cols, plot_number, steps, x_mem, x_gen, xlabel, ylabel
     
     # ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}k'))  # Format tick labels as 'k' units
 
-    ymin, ymax = -2.0, 2.5
-    # ymin, ymax = -0.1, 1.2
+    # ymin, ymax = 0.0, 2.5
+    ymin, ymax = -0.1, 1.8
     ax.set_ylim(ymin, ymax)
     # ymin, ymax = ax.get_ylim()
     # ymax=500
@@ -1065,7 +749,7 @@ if __name__ == '__main__':
 
 
     # Add arguments
-    parser.add_argument('--base_dir', type=str)
+    parser.add_argument('--base_dir', type=str, default='/home/hoyeon/OLMo')
     parser.add_argument('--save_dir', type=str, default="figs")
     parser.add_argument('--exp_name', type=str, required=True)
     parser.add_argument('--mode', type=str, default="draw_figures")
