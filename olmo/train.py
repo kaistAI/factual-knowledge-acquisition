@@ -385,8 +385,7 @@ class Trainer:
         log.info("Resetting learning rate...")
         new_learning_rate = self.scheduler.get_lr(
             self.cfg.optimizer.learning_rate, self.scheduler_current, self.scheduler_max
-        ) #/(2048/self.cfg.global_train_batch_size)
-        # new_learning_rate = 3.0e-4/16 # Hard-coded (temporary)
+        )
         log.info(f"new_learning_rate: {new_learning_rate}")
         log.info(f"scheduler_current: {self.scheduler_current}")
         for group in self.optim.param_groups:

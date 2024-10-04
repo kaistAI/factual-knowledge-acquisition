@@ -37,15 +37,15 @@ def split_array(data, chunk_size):
 
 def save_chunks(data, chunk_size, directory='dolma_extracted'):
 
-    # if not os.path.exists(directory):
-    #     os.makedirs(directory)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
         
     for i, chunk in enumerate(split_array(data, chunk_size)):
         filename = f"{directory}/part-{i:05d}.npy"
         np.save(filename, chunk)
         print(f"Saved {filename}")
 
-batch_indices = range(360000,361024)
+batch_indices = range(360000,363000)
 
 extracted_dataset = []
 print(batch_indices)
@@ -53,4 +53,4 @@ for i, idx in enumerate(tqdm(batch_indices)):
     extracted_dataset.extend(get_batch_instances(idx))
     
 print(f"len extracted data: {len(extracted_dataset)}")
-save_chunks(extracted_dataset, 1024)
+save_chunks(extracted_dataset, 3000)
