@@ -43,7 +43,7 @@ RUN_NAME=EXP_NAME
 
 export SCRATCH_DIR='PATH_TO_THE_REPOSITORY'
 
-python -m torch.distributed.run --nproc_per_node=4 ${SCRATCH_DIR}/scripts/train.py configs/official/OLMo-1B-105.yaml \
+python -m torch.distributed.run --nproc_per_node=4 ${SCRATCH_DIR}/scripts/train.py configs/official/OLMo-7B.yaml \
     --run_name=${RUN_NAME} \
     --data.paths=[${SCRATCH_DIR}/dolma_extracted/360000-363100.npy] \
     --load_path=PATH_TO_THE_CHECKPOINT/step${BASE_STEP}-unsharded \
