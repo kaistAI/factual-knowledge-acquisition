@@ -48,7 +48,7 @@ python -m torch.distributed.run --nproc_per_node=4 ${SCRATCH_DIR}/scripts/train.
     --data.paths=[${SCRATCH_DIR}/dolma_extracted/360000-363100.npy] \
     --load_path=PATH_TO_THE_CHECKPOINT/step${BASE_STEP}-unsharded \
     --base_step=${BASE_STEP} \
-    --inject_indices_map=${SCRATCH_DIR/analysis/inject_indices_map/7b-360000.pkl} \
+    --inject_indices_map=${SCRATCH_DIR}/analysis/inject_indices_map/7b-360000.pkl \
     --save_overwrite
 ```
 
